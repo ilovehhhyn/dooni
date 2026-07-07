@@ -4,8 +4,10 @@
 
 A tiny always-on-top desktop widget that keeps a running memo of your AI coding chat sessions (Claude Code, Codex CLI). Long chats accumulate dozens of subtopics; dooni surfaces a persistent, glanceable running list so you never lose the thread.
 
-<img width="342" height="499" alt="Screenshot 2026-07-07 at 2 49 31 AM" src="https://github.com/user-attachments/assets/3c308493-7374-4e1a-b82c-793fb738645e" />
-
+  <p align="center">                                                                                                     
+    <img width="340" height="500" alt="Screenshot 2026-07-07 at 2 50 34 AM"                                              
+  src="https://github.com/user-attachments/assets/431cf34d-b371-4cc6-b148-be0d23f4701f" />                               
+  </p> 
 ## What it does
 
 - Pops up in the corner of your screen while you're chatting with `claude` or `codex` in a terminal.
