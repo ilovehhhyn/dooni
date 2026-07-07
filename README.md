@@ -21,6 +21,7 @@ dooni keeps a persistent, glanceable running list so you never lose the thread.
   - **wordy**: full sentences (e.g. `▢ Helen asked why events weren't received, and the assistant found a missing capability`)
   - Switching modes only affects new entries; existing entries stay as they were.
 - Aha moments get a 💡 prefix
+- Multiple chat sessions running at once? Each gets its own dooni window, with its own memo, spawned automatically the first time dooni notices activity in that session.
 
 ## Install
 

@@ -264,7 +264,7 @@ dooni/
 ## 13. Known non-goals for MVP
 
 - **claude.ai web chat coverage** (would need a browser extension).
-- **Multi-session simultaneous tracking** (MVP focuses on the most recently active file).
+- ~~**Multi-session simultaneous tracking** (MVP focuses on the most recently active file).~~ **Now supported:** the watcher scans every JSONL modified in the last 30 min; the first time a session is seen, a new `session-<id>` webview window is spawned, and topics/events are scoped per session (see `src-tauri/src/sessions.rs`).
 - **Persistence across dooni restarts** (topics live in memory only).
 - **Configurable model / trigger threshold via UI** (hard-coded for now).
 - **Tray icon menu** (window is the whole UX for MVP).
