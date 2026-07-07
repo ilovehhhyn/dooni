@@ -3,6 +3,11 @@
   "private": true,
   "version": "0.1.0",
   "scripts": {
+    "check-prereqs": "node scripts/check-prereqs.mjs",
+    "predev": "npm run check-prereqs",
+    "dev": "tauri dev",
+    "prebuild": "npm run check-prereqs",
+    "build": "tauri build",
     "tauri": "tauri"
   },
   "devDependencies": {

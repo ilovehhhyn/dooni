@@ -27,19 +27,31 @@ dooni keeps a persistent, glanceable running list so you never lose the thread.
 
 Requirements: macOS, Node 18+, Rust stable, Xcode command line tools.
 
+The backend is Rust, so you need the Rust toolchain. If you don't have it:
+
+```sh
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+source "$HOME/.cargo/env"   # or open a new terminal
+xcode-select --install       # if the command line tools aren't installed yet
+```
+
+Then:
+
 ```sh
 git clone https://github.com/ilovehhhyn/dooni.git
 cd dooni
 npm install
-npx tauri dev
+npm run dev
 ```
+
+`npm run dev` runs a quick prerequisite check first — if Rust is missing (or just not on your PATH), it prints exactly what to do instead of a cryptic `cargo metadata` error. The first build compiles all Rust dependencies and takes a few minutes; later launches are fast.
 
 Grab an Anthropic API key at https://console.anthropic.com/settings/keys and paste it into the onboarding form on first launch.
 
 To build a distributable `.app`:
 
 ```sh
-npx tauri build
+npm run build
 ```
 
 ## How to change settings
