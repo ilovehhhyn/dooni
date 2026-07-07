@@ -1,5 +1,7 @@
 # dooni
 
+<p align="center"><img src="docs/logo.png" alt="dooni" width="120" /></p>
+
 A tiny always-on-top desktop widget that keeps a running memo of your AI coding chat sessions (Claude Code, Codex CLI). Long chats accumulate dozens of subtopics; dooni surfaces a persistent, glanceable running list so you never lose the thread.
 
 ## What it does
