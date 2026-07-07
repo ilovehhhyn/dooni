@@ -6,7 +6,7 @@
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-  <!-- Screen: welcome (first-time, no active session) -->
+  <!-- Screen: welcome (main window, first-time, no active session) -->
   <div id="screen-welcome" class="screen hidden">
     <div class="center">
       <div class="blob"></div>
@@ -14,7 +14,7 @@
     </div>
   </div>
 
-  <!-- Screen: greeting (returning user, no active session) -->
+  <!-- Screen: greeting (main window, returning user, no active session) -->
   <div id="screen-greeting" class="screen hidden">
     <div class="center">
       <div class="blob"></div>
@@ -22,21 +22,21 @@
     </div>
   </div>
 
-  <!-- Screen: onboarding (first-time, live session detected) -->
+  <!-- Screen: onboarding (main window, first-time, live session detected) -->
   <div id="screen-onboard" class="screen hidden">
     <div class="center onboard-inner">
       <div class="blob"></div>
-      <div class="onboard-title">before we start…</div>
+      <div class="onboard-title">before we start</div>
       <label>your name<input id="ob-name" type="text" placeholder="helen" autocomplete="off" /></label>
       <label>anthropic api key<input id="ob-anthropic-key" type="password" placeholder="sk-ant-..." autocomplete="off" /></label>
-      <div class="ob-or">— or —</div>
+      <div class="ob-or">or</div>
       <label>codex / openai api key<input id="ob-codex-key" type="password" placeholder="sk-..." autocomplete="off" /></label>
       <button id="ob-save">start</button>
       <div id="ob-error"></div>
     </div>
   </div>
 
-  <!-- Screen: memo (main running list) -->
+  <!-- Screen: memo (session windows) -->
   <div id="screen-memo" class="screen hidden">
     <div id="app">
       <header>
@@ -45,14 +45,14 @@
         </div>
         <div class="blob" id="memo-blob"></div>
         <div class="title">dooni</div>
-        <div class="sub">running memo</div>
+        <div class="sub" id="memo-sub">running memo</div>
       </header>
       <main>
-        <ul id="topics"><li class="empty">// no topics yet — start chatting</li></ul>
+        <ul id="topics"><li class="empty">// no topics yet, start chatting</li></ul>
       </main>
       <footer>
         <button id="clear">clear</button>
-        <span id="status">watching…</span>
+        <span id="status">watching...</span>
       </footer>
     </div>
   </div>

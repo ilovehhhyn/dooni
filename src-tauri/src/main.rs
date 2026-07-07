@@ -4,14 +4,19 @@ mod watcher;
 mod process_watch;
 mod summarizer;
 mod config;
+mod sessions;
 
 use std::sync::{Arc, Mutex};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 #[derive(Default)]
 pub struct AppState {
+    /// per-session parse state, keyed by session_id
     pub sessions: Mutex<HashMap<String, SessionState>>,
-    pub topics: Mutex<Vec<String>>,
+    /// per-session topic memo, keyed by session_id
+    pub topics_by_session: Mutex<HashMap<String, Vec<String>>>,
+    /// session_ids that already have a spawned window
+    pub windows_spawned: Mutex<HashSet<String>>,
     pub config: Mutex<config::Config>,
 }
 
@@ -29,15 +34,21 @@ pub struct Turn {
 }
 
 #[tauri::command]
-fn get_topics(state: tauri::State<Arc<AppState>>) -> Vec<String> {
-    state.topics.lock().unwrap().clone()
+fn get_topics(state: tauri::State<Arc<AppState>>, session_id: String) -> Vec<String> {
+    state
+        .topics_by_session
+        .lock()
+        .unwrap()
+        .get(&session_id)
+        .cloned()
+        .unwrap_or_default()
 }
 
 #[tauri::command]
-fn clear_topics(state: tauri::State<Arc<AppState>>) -> Vec<String> {
-    let mut t = state.topics.lock().unwrap();
-    t.clear();
-    t.clone()
+fn clear_topics(state: tauri::State<Arc<AppState>>, session_id: String) -> Vec<String> {
+    let mut m = state.topics_by_session.lock().unwrap();
+    m.insert(session_id.clone(), Vec::new());
+    Vec::new()
 }
 
 #[tauri::command]
@@ -75,7 +86,8 @@ fn main() {
     let cfg = config::load();
     let state = Arc::new(AppState {
         sessions: Mutex::new(HashMap::new()),
-        topics: Mutex::new(Vec::new()),
+        topics_by_session: Mutex::new(HashMap::new()),
+        windows_spawned: Mutex::new(HashSet::new()),
         config: Mutex::new(cfg),
     });
 
