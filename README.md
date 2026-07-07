@@ -1,27 +1,24 @@
 # dooni
 
-A tiny always-on-top desktop widget that keeps a running memo of what you've discussed with your AI coding agent (Claude Code, Codex CLI). Long chat sessions accumulate dozens of subtopics — dooni surfaces a persistent, glanceable running list so you never lose the thread.
+A tiny always-on-top desktop widget that keeps a running memo of your AI coding chat sessions (Claude Code, Codex CLI). Long chats accumulate dozens of subtopics; dooni surfaces a persistent, glanceable running list so you never lose the thread.
 
 ## What it does
 
-- Watches `~/.claude/projects/**/*.jsonl` and `~/.codex/sessions/**/*.jsonl` for live session transcripts.
-- Every 5 user prompts, sends the recent turns + current memo to Claude Haiku 4.5 with a "grow this list" prompt.
-- Renders the memo in a small always-on-top window. The list **only ever grows**.
-- Two modes: **curt** (short bullet topics) and **wordy** (full "Helen asked X, and the assistant did Y" sentences). Toggle in the top-right — switching only affects future entries; past ones stay in the style they were recorded in.
+- Pops up in the corner of your screen while you're chatting with `claude` or `codex` in a terminal.
+- Watches your local session transcripts and, every few prompts, updates a running memo of what you've talked about.
+- The list only ever grows — you can glance at it any time to remember what this session has covered.
+- Two modes toggled from the top-right corner:
+  - **curt** — short bullet topics (e.g. `▢ Tauri event permissions`)
+  - **wordy** — full sentences (e.g. `▢ Helen asked why events weren't received, and the assistant found a missing capability`)
+  - Switching modes only affects new entries; existing entries stay as they were.
+- Aha moments get a 💡 prefix.
 
-## Screens
-
-- **First launch, nothing happening yet** → bare blob + `welcome to dooni`.
-- **First launch, live claude/codex session running** → onboarding: name + API key → `start`.
-- **Returning user, idle** → friendly greeting ("dooni hopes helen is drinking water").
-- **Session activity or existing memo** → the running list.
-
-## Install & run
+## Install
 
 Requirements: macOS, Node 18+, Rust stable, Xcode command line tools.
 
 ```sh
-git clone <this repo>
+git clone https://github.com/ilovehhhyn/dooni.git
 cd dooni
 npm install
 npx tauri dev
@@ -35,59 +32,42 @@ To build a distributable `.app`:
 npx tauri build
 ```
 
-## Configuration
+## How to change settings
 
-There is **no CLI**. All settings live in a JSON file:
+All settings live in a JSON file:
 
 - macOS: `~/Library/Application Support/dooni/config.json`
 - Linux: `~/.config/dooni/config.json`
 
-Example:
-
-```json
-{
-  "api_key": "sk-ant-...",
-  "name": "helen",
-  "agents": ["claude", "codex"],
-  "mode": "curt",
-  "onboarded": true
-}
-```
-
-### Changing things after onboarding
-
-Edit that file directly (dooni reads it on launch), or use `jq`:
+Edit that file directly, or use `jq` as shown below. **Restart dooni for changes to take effect.**
 
 ```sh
 CFG=~/Library/Application\ Support/dooni/config.json
+```
 
-# Update your API key
-jq '.api_key = "sk-ant-NEW"' "$CFG" > "$CFG.tmp" && mv "$CFG.tmp" "$CFG"
+### How to change default memo mode
 
-# Set default mode to wordy
+```sh
 jq '.mode = "wordy"' "$CFG" > "$CFG.tmp" && mv "$CFG.tmp" "$CFG"
+# or "curt"
+```
 
-# Reset onboarding (see the welcome screen again)
+You can also just click the toggle in the top-right of the dooni window — no restart needed for that.
+
+### How to update API key
+
+```sh
+jq '.api_key = "sk-ant-NEW"' "$CFG" > "$CFG.tmp" && mv "$CFG.tmp" "$CFG"
+```
+
+### Reset onboarding
+
+```sh
 jq '.onboarded = false' "$CFG" > "$CFG.tmp" && mv "$CFG.tmp" "$CFG"
 ```
 
-Restart dooni for changes to take effect. Environment variable `ANTHROPIC_API_KEY` is used as a fallback if the config file has no key.
+Next launch will show the welcome + onboarding screens again.
 
-## curt vs wordy
+## More
 
-- **curt** — `▢ Tauri v2 event permissions`
-- **wordy** — `▢ Helen asked why the frontend wasn't receiving events, and the assistant found the capabilities file was missing core:event:allow-listen`
-
-Aha moments in either mode get a 💡 prefix. Switching modes only affects future entries; existing ones stay in the style they were recorded in (no token waste re-summarizing).
-
-## Design notes
-
-See [BUILD_PLAN.md](./BUILD_PLAN.md) for architecture, JSONL parsing rules, prompt design, and the full rationale.
-
-## Known limitations
-
-- Tracks the most recently modified JSONL file only — multi-session concurrent tracking is not implemented.
-- claude.ai web chat is not covered (no local log to tail).
-- Topics live in memory; restarting dooni clears the memo.
-- The `codex` API key input in onboarding is stored but only Anthropic's API is used for summarization today.
-- The `agents` field in `config.json` is stored but not yet used to filter which log directories are watched — both are always watched. To fully disable one, delete or rename the corresponding directory (`~/.claude/projects` or `~/.codex/sessions`).
+See [BUILD_PLAN.md](./BUILD_PLAN.md) for architecture, JSONL parsing rules, prompt design, known limitations, and the full rationale.
