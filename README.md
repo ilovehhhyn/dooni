@@ -1,6 +1,6 @@
 # dooni
 
-A tiny always-on-top desktop widget that keeps a running memo of your AI coding chat sessions (Claude Code, Codex CLI). Long chats accumulate dozens of subtopics; dooni surfaces a persistent, glanceable running list so you never lose the thread.
+A tiny always-on-top desktop widget that keeps a running memo of your AI coding chat sessions (Claude Code, Codex CLI). Long chats accumulate twists and turns that could fleet your mind; don't fret! dooni keeps a persistent, glanceable running list so you never lose the thread.
 
   <p align="center">                                                                                                     
     <img width="340" height="500" alt="Screenshot 2026-07-07 at 2 50 34 AM"                                              
@@ -11,12 +11,12 @@ A tiny always-on-top desktop widget that keeps a running memo of your AI coding 
 
 - Pops up in the corner of your screen while you're chatting with `claude` or `codex` in a terminal.
 - Watches your local session transcripts and, every few prompts, updates a running memo of what you've talked about.
-- The list only ever grows — you can glance at it any time to remember what this session has covered.
+- The list only ever grows unless you clear it: you can glance at it any time to remember what this session has covered.
 - Two modes toggled from the top-right corner:
-  - **curt** — short bullet topics (e.g. `▢ Tauri event permissions`)
-  - **wordy** — full sentences (e.g. `▢ Helen asked why events weren't received, and the assistant found a missing capability`)
+  - **curt**: short bullet topics (e.g. `▢ Tauri event permissions`)
+  - **wordy**: full sentences (e.g. `▢ Helen asked why events weren't received, and the assistant found a missing capability`)
   - Switching modes only affects new entries; existing entries stay as they were.
-- Aha moments get a 💡 prefix.
+- Aha moments get a 💡 prefix
 
 ## Install
 
@@ -57,7 +57,7 @@ jq '.mode = "wordy"' "$CFG" > "$CFG.tmp" && mv "$CFG.tmp" "$CFG"
 # or "curt"
 ```
 
-You can also just click the toggle in the top-right of the dooni window — no restart needed for that.
+You can also just click the toggle in the top-right of the dooni window (no restart needed).
 
 ### How to update API key
 
