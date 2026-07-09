@@ -19,6 +19,28 @@ pub fn window_label_for(session_id: &str) -> String {
     format!("session-{sanitized}")
 }
 
+/// Classify which agent a JSONL log path belongs to based on the roots
+/// dooni watches. Returns "claude", "codex", or "unknown".
+pub fn agent_from_path(path: &Path) -> &'static str {
+    let s = path.to_string_lossy();
+    if s.contains("/.claude/projects/") { "claude" }
+    else if s.contains("/.codex/sessions/") || s.contains("/.codex/history") { "codex" }
+    else { "unknown" }
+}
+
+/// Claude Code encodes the project directory as the parent folder of the
+/// JSONL, with `/` replaced by `-` and a leading `-` (e.g.
+/// `~/.claude/projects/-Users-helen-dooni/abc.jsonl` → `/Users/helen/dooni`).
+/// Returns `None` when the path doesn't fit that pattern.
+pub fn project_dir_from_path(path: &Path) -> Option<String> {
+    let parent = path.parent()?;
+    let name = parent.file_name()?.to_str()?;
+    if !name.starts_with('-') { return None; }
+    let decoded = name.replace('-', "/");
+    if decoded.is_empty() { return None; }
+    Some(decoded)
+}
+
 /// Extract the session id back out of a window label (inverse of `window_label_for`).
 /// Returns `None` if the label is not a session window (e.g., "main").
 #[allow(dead_code)]
@@ -60,5 +82,40 @@ mod tests {
     #[test]
     fn main_label_is_not_a_session() {
         assert_eq!(session_id_from_label("main"), None);
+    }
+
+    #[test]
+    fn agent_from_path_classifies() {
+        assert_eq!(
+            agent_from_path(&PathBuf::from("/Users/x/.claude/projects/-Users-x-repo/abc.jsonl")),
+            "claude"
+        );
+        assert_eq!(
+            agent_from_path(&PathBuf::from("/Users/x/.codex/sessions/2026/01/foo.jsonl")),
+            "codex"
+        );
+        assert_eq!(
+            agent_from_path(&PathBuf::from("/Users/x/.codex/history/foo.jsonl")),
+            "codex"
+        );
+        assert_eq!(
+            agent_from_path(&PathBuf::from("/tmp/random.jsonl")),
+            "unknown"
+        );
+    }
+
+    #[test]
+    fn project_dir_decodes_claude_slug() {
+        let p = PathBuf::from("/Users/x/.claude/projects/-Users-helen-dooni/abc.jsonl");
+        assert_eq!(
+            project_dir_from_path(&p),
+            Some("/Users/helen/dooni".to_string())
+        );
+    }
+
+    #[test]
+    fn project_dir_none_when_not_slug() {
+        let p = PathBuf::from("/tmp/plain/abc.jsonl");
+        assert_eq!(project_dir_from_path(&p), None);
     }
 }

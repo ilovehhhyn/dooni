@@ -1,4 +1,5 @@
-use crate::sessions::{session_id_from_path, window_label_for};
+use crate::sessions::{agent_from_path, project_dir_from_path, session_id_from_path, window_label_for};
+use crate::session_store::{self, SessionMeta};
 use crate::{AppState, Turn};
 use anyhow::Result;
 use std::path::{Path, PathBuf};
@@ -11,6 +12,8 @@ use tokio::io::{AsyncBufReadExt, AsyncSeekExt, BufReader};
 const TRIGGER_EVERY_N_USER_PROMPTS: usize = 5;
 const RECENT_WINDOW_SECS: u64 = 30 * 60; // consider files modified in the last 30 min as active
 const POLL_INTERVAL_SECS: u64 = 2;
+/// A session is "running" if its JSONL was touched this recently.
+const RUNNING_WINDOW_SECS: u64 = 3 * 60;
 
 pub async fn run(app: AppHandle, state: Arc<AppState>) -> Result<()> {
     let claude_root = dirs::home_dir().map(|h| h.join(".claude").join("projects"));
@@ -25,11 +28,13 @@ pub async fn run(app: AppHandle, state: Arc<AppState>) -> Result<()> {
             RECENT_WINDOW_SECS,
         );
 
-        for path in files {
-            if let Err(e) = process_file(&path, &app, &state).await {
+        for path in &files {
+            if let Err(e) = process_file(path, &app, &state).await {
                 eprintln!("[dooni] process_file error for {}: {e:?}", path.display());
             }
         }
+
+        refresh_session_meta(&files, &app, &state);
 
         tokio::time::sleep(Duration::from_secs(POLL_INTERVAL_SECS)).await;
     }
@@ -172,6 +177,75 @@ async fn process_file(path: &Path, app: &AppHandle, state: &Arc<AppState>) -> Re
     }
 
     Ok(())
+}
+
+fn refresh_session_meta(files: &[PathBuf], app: &AppHandle, state: &Arc<AppState>) {
+    let now = SystemTime::now();
+    let mut changed = false;
+    let snapshot: Vec<SessionMeta>;
+    {
+        let mut map = state.session_meta.lock().unwrap();
+        // Mark all as not running; we'll flip the truly-active ones back below.
+        for m in map.values_mut() {
+            if m.running {
+                m.running = false;
+                changed = true;
+            }
+        }
+        for path in files {
+            let session_id = session_id_from_path(path);
+            let agent = agent_from_path(path).to_string();
+            let project_dir = project_dir_from_path(path);
+            let jsonl_path = path.to_string_lossy().to_string();
+            let mtime = path
+                .metadata()
+                .and_then(|m| m.modified())
+                .ok()
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| d.as_secs())
+                .unwrap_or(0);
+            let running = now
+                .duration_since(std::time::UNIX_EPOCH)
+                .ok()
+                .map(|d| d.as_secs().saturating_sub(mtime) <= RUNNING_WINDOW_SECS)
+                .unwrap_or(false);
+            let entry = map.entry(session_id.clone()).or_insert_with(|| {
+                let title = session_store::default_title(project_dir.as_deref(), &session_id);
+                changed = true;
+                SessionMeta {
+                    session_id: session_id.clone(),
+                    agent: agent.clone(),
+                    title,
+                    project_dir: project_dir.clone(),
+                    jsonl_path: jsonl_path.clone(),
+                    last_active: mtime,
+                    running,
+                }
+            });
+            if entry.agent != agent { entry.agent = agent; changed = true; }
+            if entry.project_dir != project_dir { entry.project_dir = project_dir; changed = true; }
+            if entry.jsonl_path != jsonl_path { entry.jsonl_path = jsonl_path; changed = true; }
+            if entry.last_active != mtime { entry.last_active = mtime; changed = true; }
+            if entry.running != running { entry.running = running; changed = true; }
+        }
+        snapshot = map.values().cloned().collect();
+    }
+    if changed {
+        let mut snapshot = snapshot;
+        // Newest first.
+        snapshot.sort_by(|a, b| b.last_active.cmp(&a.last_active));
+        let payload = serde_json::json!({ "sessions": snapshot });
+        if let Err(e) = app.emit_to("house-manager", "sessions-updated", payload.clone()) {
+            eprintln!("[dooni] emit_to(house-manager) error: {e:?}");
+        }
+        // Also broadcast unscoped in case the window listens without scope.
+        let _ = app.emit("sessions-updated", payload);
+        // Persist best-effort.
+        let map = state.session_meta.lock().unwrap();
+        if let Err(e) = session_store::save(&*map) {
+            eprintln!("[dooni] session_store save error: {e:?}");
+        }
+    }
 }
 
 fn ensure_session_window(app: &AppHandle, state: &Arc<AppState>, session_id: &str) {

@@ -55,7 +55,34 @@ function chooseScreen() {
     return;
   }
   showScreen("greeting");
-  greetingText.textContent = pickGreeting(userName || "you");
+  // Greeting text is chosen once at startup and refreshed every 3h — don't
+  // re-pick on every session-active tick (was flickering the phrase).
+}
+
+function refreshGreeting() {
+  if (greetingText) greetingText.textContent = pickGreeting(userName || "you");
+}
+
+const GREETING_REFRESH_MS = 3 * 60 * 60 * 1000;
+setInterval(refreshGreeting, GREETING_REFRESH_MS);
+
+// --- always-on-top lock (per window) ---
+let pinned = true; // windows are created with alwaysOnTop=true
+function setupLockButton() {
+  const btn = document.getElementById("lock-btn");
+  if (!btn) return;
+  const paint = () => { btn.textContent = pinned ? "🔒" : "🔓"; };
+  paint();
+  btn.addEventListener("click", async () => {
+    pinned = !pinned;
+    paint();
+    try {
+      const w = window.__TAURI__ && window.__TAURI__.window;
+      const getter = w && (w.getCurrentWindow || w.getCurrent);
+      const cur = getter ? getter.call(w) : null;
+      if (cur && cur.setAlwaysOnTop) await cur.setAlwaysOnTop(pinned);
+    } catch (e) { console.error("lock err", e); }
+  });
 }
 
 function setStatus(s) { if (status) status.textContent = s; }
@@ -116,6 +143,8 @@ async function init() {
   onboarded = !!cfg.onboarded;
   userName  = cfg.name || "";
   toggleBtn.textContent = mode;
+  setupLockButton();
+  refreshGreeting();
 
   // --- Session window: just render memo ---
   if (isSessionWindow()) {

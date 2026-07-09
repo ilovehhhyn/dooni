@@ -2,7 +2,7 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "default capability",
-  "windows": ["main", "session-*"],
+  "windows": ["main", "session-*", "house-manager"],
   "permissions": [
     "core:default",
     "core:event:default",
@@ -10,6 +10,7 @@
     "core:event:allow-unlisten",
     "core:window:default",
     "core:window:allow-set-title",
+    "core:window:allow-set-always-on-top",
     "core:webview:default",
     "core:webview:allow-create-webview-window"
   ]

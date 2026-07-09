@@ -1,0 +1,189 @@
+/* House-manager: white background, dark castle + dark dooni. */
+.mgr-body {
+  margin: 0;
+  padding: 12px;
+  font-family: "SF Mono", "Menlo", "Monaco", "Courier New", monospace;
+  background: #ffffff;
+  color: #111;
+  height: 100vh;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+}
+
+.mgr-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+.lock-btn-inline {
+  position: static;
+  background: transparent;
+  border: none;
+  padding: 0 2px;
+  cursor: pointer;
+  font-size: 12px;
+  opacity: 0.7;
+}
+.lock-btn-inline:hover { opacity: 1; }
+.mgr-toggle {
+  background: #fff;
+  color: #000;
+  border: 1px solid #000;
+  padding: 2px 8px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 11px;
+}
+.mgr-toggle:hover { background: #000; color: #fff; }
+
+.mgr-view { flex: 1; overflow: auto; position: relative; }
+.mgr-view.no-scroll { overflow: hidden; display: flex; flex-direction: column; }
+/* Hide scrollbars visually across views. */
+.mgr-view::-webkit-scrollbar { width: 0; height: 0; }
+.mgr-view { scrollbar-width: none; }
+.hidden { display: none !important; }
+
+.scene {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 0 0;
+  min-height: 0;
+}
+
+/* --- Dooni owl/plague-doctor: horizontal beak sticking out the right side
+       (equivalent to the previous downward beak rotated CCW 90°). --- */
+/* Dooni head is scaled up in the house-manager window. */
+.dooni {
+  position: relative;
+  width: 42px;
+  height: 44px;
+  zoom: 2.8;
+}
+.dooni .blob { position: absolute; top: 0; left: 0; }
+/* Tiny horizontal beak sticking out the right side of the face. */
+.dooni .beak {
+  position: absolute;
+  left: 27px;
+  top: 19px;
+  transform: scale(1.5);
+  transform-origin: 0 0;
+  width: 2px;
+  height: 2px;
+  background: #7a7a7a;
+  box-shadow:
+    6px -2px #7a7a7a,
+    8px -2px #7a7a7a,
+    10px -2px #7a7a7a,
+    -4px 0 #7a7a7a,
+    -2px 0 #7a7a7a,
+    -4px 4px #7a7a7a,
+    -2px 4px #7a7a7a,
+    2px 0 #7a7a7a,
+    4px 0 #7a7a7a,
+    6px 0 #7a7a7a,
+    8px 0 #7a7a7a,
+    10px 0 #7a7a7a,
+    -4px 2px #7a7a7a,
+    -2px 2px #7a7a7a,
+    0 2px #7a7a7a,
+    2px 2px #7a7a7a,
+    12px 2px #7a7a7a,
+    12px 4px #7a7a7a,
+    12px 6px #7a7a7a;
+}
+
+/* --- Castle SVG --- */
+.castle-svg {
+  width: 100%;
+  max-width: 160px;
+  flex: 1;
+  min-height: 0;
+  display: block;
+}
+.castle-svg .win {
+  fill: #0d0d0d;
+  stroke: none;
+}
+.castle-svg .win.session { cursor: pointer; }
+.castle-svg .win.idle    { fill: #d1d1d1; }
+.castle-svg .win.running {
+  fill: #ff8a3d;
+  filter: drop-shadow(0 0 2.5px rgba(255, 138, 61, 0.95));
+  animation: winPulse 1.6s ease-in-out infinite;
+}
+@keyframes winPulse {
+  0%, 100% { opacity: 0.85; }
+  50%      { opacity: 1; }
+}
+
+.mgr-empty { text-align: center; opacity: 0.55; font-size: 11px; }
+
+/* --- list view --- */
+.mgr-list { list-style: none; margin: 0; padding: 0; }
+.mgr-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-bottom: 1px dotted rgba(0,0,0,0.2);
+  font-size: 12px;
+}
+.mgr-list li:hover { background: #f2f2f2; }
+.dot {
+  width: 10px; height: 10px; border-radius: 50%;
+  flex-shrink: 0;
+  background: #d0d0d0;
+}
+.dot.running {
+  background: radial-gradient(circle at 30% 30%, #ffd6b3, #ff8a3d 60%, #b34700);
+  box-shadow: 0 0 6px #ff8a3d;
+}
+.dot.idle {
+  background: radial-gradient(circle at 30% 30%, #e8e8e8, #9a9a9a 60%, #4a4a4a);
+}
+.list-title {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: text;
+}
+.list-title:focus { outline: 1px dashed #666; background: #f6f6f6; }
+.list-agent {
+  font-size: 10px;
+  opacity: 0.6;
+  padding: 1px 4px;
+  border: 1px solid #000;
+  border-radius: 2px;
+}
+.list-focus {
+  background: #fff;
+  color: #000;
+  border: 1px solid #000;
+  padding: 2px 6px;
+  font-family: inherit;
+  font-size: 10px;
+  cursor: pointer;
+}
+.list-focus:hover { background: #000; color: #fff; }
+
+.mgr-tooltip {
+  position: fixed;
+  background: #fff;
+  border: 1px solid #000;
+  padding: 4px 6px;
+  font-size: 11px;
+  pointer-events: none;
+  z-index: 999;
+  max-width: 260px;
+}
+.mgr-status {
+  margin-top: 6px;
+  font-size: 10px;
+  opacity: 0.5;
+}
