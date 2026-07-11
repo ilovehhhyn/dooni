@@ -6,8 +6,9 @@
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-  <!-- Always-visible pin/lock toggle (top of every window). -->
-  <button id="lock-btn" class="lock-btn" title="pin on top">🔒</button>
+  <!-- Always-visible pin/lock toggle (top of every window).
+       Filled circle = locked (always-on-top); hollow (white) = unlocked. -->
+  <button id="lock-btn" class="lock-btn" title="pin on top" aria-label="pin on top"></button>
 
   <!-- Screen: welcome (main window, first-time, no active session) -->
   <div id="screen-welcome" class="screen hidden">

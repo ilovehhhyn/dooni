@@ -67,11 +67,12 @@ const GREETING_REFRESH_MS = 3 * 60 * 60 * 1000;
 setInterval(refreshGreeting, GREETING_REFRESH_MS);
 
 // --- always-on-top lock (per window) ---
-let pinned = true; // windows are created with alwaysOnTop=true
+let pinned = false; // windows default to unlocked (not always-on-top)
 function setupLockButton() {
   const btn = document.getElementById("lock-btn");
   if (!btn) return;
-  const paint = () => { btn.textContent = pinned ? "🔒" : "🔓"; };
+  // Filled (.locked) = pinned on top; hollow white = unpinned.
+  const paint = () => { btn.classList.toggle("locked", pinned); };
   paint();
   btn.addEventListener("click", async () => {
     pinned = !pinned;
@@ -148,7 +149,16 @@ async function init() {
 
   // --- Session window: just render memo ---
   if (isSessionWindow()) {
-    memoSub.textContent = `session ${sessionId.slice(0, 12)}`;
+    const setMemoTitle = (t) => {
+      memoSub.textContent = (t && t.trim()) ? t.trim() : `session ${sessionId.slice(0, 12)}`;
+    };
+    setMemoTitle(null);
+    // Seed the title from persisted session metadata (survives restarts).
+    try {
+      const all = await invoke("get_sessions");
+      const mine = Array.isArray(all) ? all.find((s) => s.session_id === sessionId) : null;
+      if (mine) setMemoTitle(mine.title);
+    } catch (_) {}
     try {
       const topics = await invoke("get_topics", { sessionId });
       render(topics);
@@ -159,6 +169,7 @@ async function init() {
       await listen("topics-updated", (evt) => {
         const p = evt.payload || {};
         if (p.session_id !== sessionId) return;
+        if (p.title) setMemoTitle(p.title);
         render(p.topics || []);
         setStatus(`updated ${(p.topics || []).length} @ ${new Date().toLocaleTimeString()}`);
         wiggleAll();

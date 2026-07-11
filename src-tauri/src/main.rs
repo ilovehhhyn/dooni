@@ -9,7 +9,7 @@ mod session_store;
 mod focus;
 
 use std::sync::{Arc, Mutex};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 #[derive(Default)]
 pub struct AppState {
@@ -17,8 +17,6 @@ pub struct AppState {
     pub sessions: Mutex<HashMap<String, SessionState>>,
     /// per-session topic memo, keyed by session_id
     pub topics_by_session: Mutex<HashMap<String, Vec<String>>>,
-    /// session_ids that already have a spawned window
-    pub windows_spawned: Mutex<HashSet<String>>,
     /// persistent per-session metadata for the house-manager window
     pub session_meta: Mutex<HashMap<String, session_store::SessionMeta>>,
     pub config: Mutex<config::Config>,
@@ -95,6 +93,8 @@ fn rename_session(
     let mut m = state.session_meta.lock().unwrap();
     if let Some(meta) = m.get_mut(&session_id) {
         meta.title = title;
+        // A manual rename opts out of auto title generation.
+        meta.auto_title = false;
         session_store::save(&*m).map_err(|e| e.to_string())?;
     }
     Ok(())
@@ -110,13 +110,9 @@ fn focus_session(
         let m = state.session_meta.lock().unwrap();
         m.get(&session_id).and_then(|s| s.project_dir.clone())
     };
-    // Also raise the corresponding memo window if it exists.
-    let label = sessions::window_label_for(&session_id);
-    if let Some(win) = tauri::Manager::get_webview_window(&app, &label) {
-        let _ = win.show();
-        let _ = win.unminimize();
-        let _ = win.set_focus();
-    }
+    // Open the memo window on demand — memo windows are not spawned until the
+    // user asks for one here, so this creates it (or raises it if already open).
+    watcher::open_session_window(&app, &session_id);
     focus::focus_terminal_for(project_dir.as_deref()).map_err(|e| e.to_string())
 }
 
@@ -130,11 +126,17 @@ fn set_mode(state: tauri::State<Arc<AppState>>, mode: String) -> Result<config::
 
 fn main() {
     let cfg = config::load();
-    let meta = session_store::load();
+    // Drop any previously-recorded background subagent sessions and rewrite the
+    // store so they never reappear in the house manager.
+    let mut meta = session_store::load();
+    let before = meta.len();
+    meta.retain(|_id, m| !sessions::is_background_agent(std::path::Path::new(&m.jsonl_path)));
+    if meta.len() != before {
+        let _ = session_store::save(&meta);
+    }
     let state = Arc::new(AppState {
         sessions: Mutex::new(HashMap::new()),
         topics_by_session: Mutex::new(HashMap::new()),
-        windows_spawned: Mutex::new(HashSet::new()),
         session_meta: Mutex::new(meta),
         config: Mutex::new(cfg),
     });
@@ -161,7 +163,7 @@ fn main() {
                     )
                     .title("dooni · house manager")
                     .inner_size(420.0, 560.0)
-                    .always_on_top(true)
+                    .always_on_top(false)
                     .resizable(true)
                     .decorations(true);
                     if let Err(e) = builder.build() {

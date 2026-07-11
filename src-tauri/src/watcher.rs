@@ -52,6 +52,8 @@ fn collect_recent_files(roots: &[PathBuf], window_secs: u64) -> Vec<PathBuf> {
             let p = entry.path();
             if !p.is_file() { continue; }
             if p.extension().and_then(|s| s.to_str()) != Some("jsonl") { continue; }
+            // Background subagent transcripts are internal helpers — never track them.
+            if crate::sessions::is_background_agent(p) { continue; }
             let modified = p.metadata().and_then(|m| m.modified()).ok();
             if let Some(m) = modified {
                 if m >= cutoff {
@@ -98,10 +100,9 @@ async fn process_file(path: &Path, app: &AppHandle, state: &Arc<AppState>) -> Re
 
     let user_added = new_turns.iter().filter(|t| t.role == "user").count();
 
-    // If this session produced any new content, ensure a window exists for it.
-    if !new_turns.is_empty() {
-        ensure_session_window(app, state, &session_id);
-    }
+    // Memo windows are no longer auto-spawned. We still parse and summarize so
+    // the memo is ready, but the window itself only opens when the user clicks
+    // "focus" in the house manager (see focus_session -> open_session_window).
 
     let (turns_snapshot, should_summarize) = {
         let mut map = state.sessions.lock().unwrap();
@@ -161,12 +162,26 @@ async fn process_file(path: &Path, app: &AppHandle, state: &Arc<AppState>) -> Re
                     .lock()
                     .unwrap()
                     .insert(session_id.clone(), new_list.clone());
+
+                // Auto-generate a topic title for this session's memo window,
+                // unless the user has manually renamed it in the house manager.
+                // Anchor on the session's first user prompt + the full memo so the
+                // title reflects the overall topic, not just the latest messages.
+                let first_prompt = turns_snapshot
+                    .iter()
+                    .find(|t| t.role == "user")
+                    .map(|t| t.text.as_str());
+                let title =
+                    maybe_update_title(app, state, &session_id, first_prompt, &new_list, &api_key)
+                        .await;
+
                 let label = window_label_for(&session_id);
                 // Emit both a scoped event and the payload with session id so
                 // any interested window can filter if needed.
                 let payload = serde_json::json!({
                     "session_id": session_id,
                     "topics": new_list,
+                    "title": title,
                 });
                 if let Err(e) = app.emit_to(label.as_str(), "topics-updated", payload.clone()) {
                     eprintln!("[dooni] emit_to({label}) error: {e:?}");
@@ -216,6 +231,7 @@ fn refresh_session_meta(files: &[PathBuf], app: &AppHandle, state: &Arc<AppState
                     session_id: session_id.clone(),
                     agent: agent.clone(),
                     title,
+                    auto_title: true,
                     project_dir: project_dir.clone(),
                     jsonl_path: jsonl_path.clone(),
                     last_active: mtime,
@@ -248,29 +264,104 @@ fn refresh_session_meta(files: &[PathBuf], app: &AppHandle, state: &Arc<AppState
     }
 }
 
-fn ensure_session_window(app: &AppHandle, state: &Arc<AppState>, session_id: &str) {
-    {
-        let mut set = state.windows_spawned.lock().unwrap();
-        if set.contains(session_id) {
-            return;
+/// Regenerate the memo window's title from recent messages while the session's
+/// title is still auto-managed. Applies it to the native window title, persists
+/// it, and notifies the house-manager. Returns the effective title for callers
+/// to forward to the memo window (`None` if nothing could be determined).
+async fn maybe_update_title(
+    app: &AppHandle,
+    state: &Arc<AppState>,
+    session_id: &str,
+    first_prompt: Option<&str>,
+    topics: &[String],
+    api_key: &str,
+) -> Option<String> {
+    // Only auto-generate while the user hasn't set their own title.
+    let (auto, existing, project_dir) = {
+        let map = state.session_meta.lock().unwrap();
+        match map.get(session_id) {
+            Some(m) => (m.auto_title, Some(m.title.clone()), m.project_dir.clone()),
+            None => (true, None, None),
         }
-        set.insert(session_id.to_string());
+    };
+    if !auto {
+        return existing;
     }
+
+    let topic = match crate::summarizer::generate_title(first_prompt, topics, api_key).await {
+        Ok(t) => t,
+        Err(e) => {
+            eprintln!("[dooni] title gen error for {session_id}: {e:?}");
+            return existing;
+        }
+    };
+
+    // Titles follow "repo: topic". The repo comes from the project dir basename
+    // when we know it (Claude sessions); otherwise we fall back to topic only.
+    let repo = project_dir.as_deref().and_then(|d| {
+        std::path::Path::new(d)
+            .file_name()
+            .and_then(|s| s.to_str())
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_string())
+    });
+    let title = match repo {
+        Some(r) => format!("{r}: {topic}"),
+        None => topic,
+    };
+
+    // Persist onto the session meta (only if still auto).
+    let snapshot: Vec<SessionMeta> = {
+        let mut map = state.session_meta.lock().unwrap();
+        if let Some(m) = map.get_mut(session_id) {
+            if !m.auto_title {
+                return Some(m.title.clone());
+            }
+            m.title = title.clone();
+        }
+        if let Err(e) = session_store::save(&*map) {
+            eprintln!("[dooni] session_store save error: {e:?}");
+        }
+        map.values().cloned().collect()
+    };
+
+    // Update the native memo-window title bar.
     let label = window_label_for(session_id);
-    // Skip if a window with this label already exists (e.g., recreated after restart).
-    if tauri::Manager::get_webview_window(app, &label).is_some() {
+    if let Some(win) = tauri::Manager::get_webview_window(app, &label) {
+        let _ = win.set_title(&format!("dooni · {title}"));
+    }
+
+    // Refresh the house-manager list so it shows the new title too.
+    let mut snapshot = snapshot;
+    snapshot.sort_by(|a, b| b.last_active.cmp(&a.last_active));
+    let payload = serde_json::json!({ "sessions": snapshot });
+    let _ = app.emit_to("house-manager", "sessions-updated", payload.clone());
+    let _ = app.emit("sessions-updated", payload);
+
+    Some(title)
+}
+
+/// Open (or raise) the memo window for a session. Memo windows are created
+/// lazily — only when the user asks for one via the house manager — so this
+/// builds the window on first request and just focuses it thereafter.
+pub fn open_session_window(app: &AppHandle, session_id: &str) {
+    let label = window_label_for(session_id);
+    if let Some(win) = tauri::Manager::get_webview_window(app, &label) {
+        let _ = win.show();
+        let _ = win.unminimize();
+        let _ = win.set_focus();
         return;
     }
     let title = format!("dooni · {}", short_id(session_id));
     let builder = WebviewWindowBuilder::new(app, &label, WebviewUrl::App("index.html".into()))
         .title(title)
         .inner_size(340.0, 500.0)
-        .always_on_top(true)
+        .always_on_top(false)
         .resizable(true)
         .decorations(true);
     match builder.build() {
-        Ok(_) => eprintln!("[dooni] spawned window for session {session_id} (label={label})"),
-        Err(e) => eprintln!("[dooni] failed to spawn window for {session_id}: {e:?}"),
+        Ok(_) => eprintln!("[dooni] opened memo window for session {session_id} (label={label})"),
+        Err(e) => eprintln!("[dooni] failed to open window for {session_id}: {e:?}"),
     }
 }
 

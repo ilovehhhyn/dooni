@@ -10,8 +10,13 @@ pub struct SessionMeta {
     pub session_id: String,
     /// "claude" | "codex" | "unknown".
     pub agent: String,
-    /// User-editable title. Defaults to project dir or short id.
+    /// User-editable title. Defaults to project dir or short id, then gets
+    /// upgraded to an AI-generated topic summary while `auto_title` is true.
     pub title: String,
+    /// True while `title` is still auto-managed. A manual rename flips this off
+    /// so the summarizer stops overwriting the user's chosen title.
+    #[serde(default = "default_true")]
+    pub auto_title: bool,
     /// Best-effort project working directory (Claude only, decoded from slug).
     #[serde(default)]
     pub project_dir: Option<String>,
@@ -24,6 +29,8 @@ pub struct SessionMeta {
     #[serde(default)]
     pub running: bool,
 }
+
+fn default_true() -> bool { true }
 
 fn store_path() -> Option<PathBuf> {
     dirs::config_dir().map(|d| d.join("dooni").join("sessions.json"))
