@@ -133,8 +133,9 @@ async function refresh() {
 function setupLockButton() {
   const btn = document.getElementById("lock-btn");
   if (!btn) return;
-  let pinned = true;
-  const paint = () => { btn.textContent = pinned ? "🔒" : "🔓"; };
+  let pinned = false;
+  // Filled (.locked) = pinned on top; hollow white = unpinned.
+  const paint = () => { btn.classList.toggle("locked", pinned); };
   paint();
   btn.addEventListener("click", async () => {
     pinned = !pinned;

@@ -12,18 +12,22 @@ body {
 
 .lock-btn {
   position: fixed;
-  top: 4px;
-  left: 6px;
+  top: 6px;
+  left: 8px;
   z-index: 1000;
-  background: transparent;
-  border: none;
-  padding: 2px 4px;
+  width: 12px;
+  height: 12px;
+  padding: 0;
+  border: 1.5px solid #000;
+  border-radius: 50%;
+  background: #fff; /* hollow = unlocked */
   cursor: pointer;
-  font-size: 12px;
-  line-height: 1;
-  opacity: 0.7;
+  line-height: 0;
+  font-size: 0;
 }
-.lock-btn:hover { opacity: 1; }
+/* Filled = locked (window stays on top of everything). */
+.lock-btn.locked { background: #000; }
+.lock-btn:hover { box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.15); }
 .screen.hidden { display: none; }
 
 .center {
@@ -157,6 +161,7 @@ main {
   padding: 4px 0 4px 18px;
   position: relative;
   line-height: 1.4;
+  font-size: 12px;
   border-bottom: 1px dotted rgba(0,0,0,0.15);
   word-wrap: break-word;
 }
@@ -182,5 +187,6 @@ footer button {
 }
 footer button:hover { background: #000; color: #fff; }
 #status { opacity: 0.6; }
+
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-thumb { background: #000; }
