@@ -3,8 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-/// House-manager entries disappear after five days without transcript activity.
-pub const UNUSED_RETENTION_SECS: u64 = 5 * 24 * 60 * 60;
+const SECS_PER_DAY: u64 = 24 * 60 * 60;
 
 /// Persistent metadata about a chat session, surfaced by the house-manager window.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -45,12 +44,17 @@ pub fn save(map: &HashMap<String, SessionMeta>) -> Result<()> {
     Ok(())
 }
 
-/// Remove entries whose last observed transcript activity is at least five days old.
+/// Remove entries whose last observed transcript activity reached the configured age.
 /// This only changes Dooni's metadata; the underlying transcript files are never deleted.
-pub fn prune_unused(map: &mut HashMap<String, SessionMeta>, now_secs: u64) -> bool {
+pub fn prune_unused(
+    map: &mut HashMap<String, SessionMeta>,
+    now_secs: u64,
+    retention_days: u64,
+) -> bool {
     let before = map.len();
+    let retention_secs = retention_days.saturating_mul(SECS_PER_DAY);
     map.retain(|_, session| {
-        now_secs.saturating_sub(session.last_active) < UNUSED_RETENTION_SECS
+        now_secs.saturating_sub(session.last_active) < retention_secs
     });
     map.len() != before
 }
@@ -97,13 +101,14 @@ mod tests {
     #[test]
     fn prune_unused_removes_entries_at_five_days() {
         let now = 1_000_000;
+        let retention_secs = 5 * SECS_PER_DAY;
         let mut sessions = HashMap::from([
-            ("recent".to_string(), session("recent", now - UNUSED_RETENTION_SECS + 1)),
-            ("expired".to_string(), session("expired", now - UNUSED_RETENTION_SECS)),
+            ("recent".to_string(), session("recent", now - retention_secs + 1)),
+            ("expired".to_string(), session("expired", now - retention_secs)),
             ("future".to_string(), session("future", now + 60)),
         ]);
 
-        assert!(prune_unused(&mut sessions, now));
+        assert!(prune_unused(&mut sessions, now, 5));
         assert!(sessions.contains_key("recent"));
         assert!(sessions.contains_key("future"));
         assert!(!sessions.contains_key("expired"));
@@ -111,12 +116,13 @@ mod tests {
 
     #[test]
     fn prune_unused_reports_when_nothing_changed() {
-        let now = 1_000_000;
+        let now = 10_000_000;
+        let retention_secs = 30 * SECS_PER_DAY;
         let mut sessions = HashMap::from([(
             "recent".to_string(),
-            session("recent", now - UNUSED_RETENTION_SECS + 1),
+            session("recent", now - retention_secs + 1),
         )]);
 
-        assert!(!prune_unused(&mut sessions, now));
+        assert!(!prune_unused(&mut sessions, now, 30));
     }
 }

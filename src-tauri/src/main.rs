@@ -57,7 +57,10 @@ fn clear_topics(state: tauri::State<Arc<AppState>>, session_id: String) -> Vec<S
 
 #[tauri::command]
 fn get_config(state: tauri::State<Arc<AppState>>) -> config::Config {
-    state.config.lock().unwrap().clone()
+    let mut cfg = state.config.lock().unwrap().clone();
+    cfg.terminal_retention_days =
+        config::effective_terminal_retention_days(cfg.terminal_retention_days);
+    cfg
 }
 
 #[tauri::command]
@@ -128,6 +131,23 @@ fn set_mode(state: tauri::State<Arc<AppState>>, mode: String) -> Result<config::
     Ok(cfg.clone())
 }
 
+#[tauri::command]
+fn set_terminal_retention_days(
+    state: tauri::State<Arc<AppState>>,
+    days: u64,
+) -> Result<config::Config, String> {
+    if !(1..=config::MAX_TERMINAL_RETENTION_DAYS).contains(&days) {
+        return Err(format!(
+            "terminal retention must be between 1 and {} days",
+            config::MAX_TERMINAL_RETENTION_DAYS
+        ));
+    }
+    let mut cfg = state.config.lock().unwrap();
+    cfg.terminal_retention_days = days;
+    config::save(&cfg).map_err(|e| e.to_string())?;
+    Ok(cfg.clone())
+}
+
 fn main() {
     let cfg = config::load();
     let meta = session_store::load();
@@ -144,7 +164,7 @@ fn main() {
         .manage(state.clone())
         .invoke_handler(tauri::generate_handler![
             get_topics, clear_topics, get_config, save_config, set_mode,
-            get_sessions, rename_session, focus_session
+            get_sessions, rename_session, focus_session, set_terminal_retention_days
         ])
         .setup(move |app| {
             let handle = app.handle().clone();

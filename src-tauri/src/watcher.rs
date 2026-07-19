@@ -232,7 +232,11 @@ fn refresh_session_meta(files: &[PathBuf], app: &AppHandle, state: &Arc<AppState
             .duration_since(std::time::UNIX_EPOCH)
             .map(|duration| duration.as_secs())
             .unwrap_or(0);
-        if session_store::prune_unused(&mut map, now_secs) {
+        let retention_days = {
+            let config = state.config.lock().unwrap();
+            crate::config::effective_terminal_retention_days(config.terminal_retention_days)
+        };
+        if session_store::prune_unused(&mut map, now_secs, retention_days) {
             changed = true;
         }
         snapshot = map.values().cloned().collect();

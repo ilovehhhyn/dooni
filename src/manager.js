@@ -11,6 +11,8 @@ const els = {
   listUl:  document.getElementById("mgr-list-ul"),
   tooltip: document.getElementById("mgr-tooltip"),
   status:  document.getElementById("mgr-status"),
+  retentionDays: document.getElementById("retention-days"),
+  retentionSave: document.getElementById("retention-save"),
 };
 
 const slots = Array.from(els.castleSvg.querySelectorAll("[data-slot]"));
@@ -151,6 +153,26 @@ function setupLockButton() {
 async function init() {
   if (!window.__TAURI__) { setStatus("NO __TAURI__"); return; }
   setupLockButton();
+
+  try {
+    const config = await window.__TAURI__.core.invoke("get_config");
+    els.retentionDays.value = config.terminal_retention_days || 5;
+  } catch (e) { setStatus("config err: " + e); }
+
+  els.retentionSave.addEventListener("click", async () => {
+    const days = Number(els.retentionDays.value);
+    if (!Number.isInteger(days) || days < 1 || days > 3650) {
+      setStatus("retention must be 1–3650 days");
+      return;
+    }
+    try {
+      const config = await window.__TAURI__.core.invoke(
+        "set_terminal_retention_days", { days }
+      );
+      els.retentionDays.value = config.terminal_retention_days;
+      setStatus(`idle entries kept for ${config.terminal_retention_days} days`);
+    } catch (e) { setStatus("retention err: " + e); }
+  });
 
   // Delegated slot handlers so we don't re-bind on every render.
   els.castleSvg.addEventListener("mousemove", (e) => {
