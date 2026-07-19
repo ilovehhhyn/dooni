@@ -97,6 +97,18 @@ jq '.terminal_retention_days = 30' "$CFG" > "$CFG.tmp" && mv "$CFG.tmp" "$CFG"
 
 A missing value, or any value outside 1 to 3650, falls back to the default of 5 days.
 
+### How to change the icon color
+
+The dooni icon is drawn from a single color. Change it from the manager window: use the **icon** color picker in the controls. The new color applies immediately across dooni windows (no restart needed).
+
+You can also edit the config directly with the `icon_color` key. The value must be a six-digit hex color such as `#7c3aed`:
+
+```sh
+jq '.icon_color = "#7c3aed"' "$CFG" > "$CFG.tmp" && mv "$CFG.tmp" "$CFG"
+```
+
+A missing value, or any value that is not a six-digit hex color, falls back to the default of `#000000`.
+
 ### How to update API key
 
 ```sh
