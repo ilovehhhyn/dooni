@@ -1,3 +1,10 @@
+---
+covers:
+- src-tauri/src/config.rs
+- src-tauri/src/main.rs
+- src-tauri/src/session_store.rs
+- src/manager.html
+---
 # dooni
 
 a tiny always-on-top desktop widget that keeps a running memo of your AI coding chat sessions (Claude Code, Codex CLI). 
@@ -75,6 +82,20 @@ jq '.mode = "wordy"' "$CFG" > "$CFG.tmp" && mv "$CFG.tmp" "$CFG"
 ```
 
 You can also just click the toggle in the top-right of the dooni window (no restart needed).
+
+### How to change idle session retention
+
+dooni's manager window tracks each chat session it has seen. When a session's last observed transcript activity reaches the retention age, its entry is removed from the manager. This only removes dooni's own metadata; your underlying transcript files are never deleted.
+
+Set the retention window from the manager window: enter a number in **delete idle after N days** and click **save** (no restart needed). Valid values are 1 to 3650 days; the default is 5.
+
+You can also edit the config directly with the `terminal_retention_days` key:
+
+```sh
+jq '.terminal_retention_days = 30' "$CFG" > "$CFG.tmp" && mv "$CFG.tmp" "$CFG"
+```
+
+A missing value, or any value outside 1 to 3650, falls back to the default of 5 days.
 
 ### How to update API key
 
