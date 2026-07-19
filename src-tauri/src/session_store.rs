@@ -3,6 +3,9 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
 
+/// House-manager entries disappear after five days without transcript activity.
+pub const UNUSED_RETENTION_SECS: u64 = 5 * 24 * 60 * 60;
+
 /// Persistent metadata about a chat session, surfaced by the house-manager window.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionMeta {
@@ -42,6 +45,16 @@ pub fn save(map: &HashMap<String, SessionMeta>) -> Result<()> {
     Ok(())
 }
 
+/// Remove entries whose last observed transcript activity is at least five days old.
+/// This only changes Dooni's metadata; the underlying transcript files are never deleted.
+pub fn prune_unused(map: &mut HashMap<String, SessionMeta>, now_secs: u64) -> bool {
+    let before = map.len();
+    map.retain(|_, session| {
+        now_secs.saturating_sub(session.last_active) < UNUSED_RETENTION_SECS
+    });
+    map.len() != before
+}
+
 /// Default title for a freshly discovered session.
 pub fn default_title(project_dir: Option<&str>, session_id: &str) -> String {
     if let Some(dir) = project_dir {
@@ -59,6 +72,18 @@ pub fn default_title(project_dir: Option<&str>, session_id: &str) -> String {
 mod tests {
     use super::*;
 
+    fn session(id: &str, last_active: u64) -> SessionMeta {
+        SessionMeta {
+            session_id: id.to_string(),
+            agent: "codex".to_string(),
+            title: id.to_string(),
+            project_dir: None,
+            jsonl_path: format!("/tmp/{id}.jsonl"),
+            last_active,
+            running: false,
+        }
+    }
+
     #[test]
     fn default_title_prefers_project_basename() {
         assert_eq!(default_title(Some("/Users/x/dooni"), "abc123def456ghi"), "dooni");
@@ -67,5 +92,31 @@ mod tests {
     #[test]
     fn default_title_falls_back_to_short_id() {
         assert_eq!(default_title(None, "abc123def456ghi"), "abc123def456");
+    }
+
+    #[test]
+    fn prune_unused_removes_entries_at_five_days() {
+        let now = 1_000_000;
+        let mut sessions = HashMap::from([
+            ("recent".to_string(), session("recent", now - UNUSED_RETENTION_SECS + 1)),
+            ("expired".to_string(), session("expired", now - UNUSED_RETENTION_SECS)),
+            ("future".to_string(), session("future", now + 60)),
+        ]);
+
+        assert!(prune_unused(&mut sessions, now));
+        assert!(sessions.contains_key("recent"));
+        assert!(sessions.contains_key("future"));
+        assert!(!sessions.contains_key("expired"));
+    }
+
+    #[test]
+    fn prune_unused_reports_when_nothing_changed() {
+        let now = 1_000_000;
+        let mut sessions = HashMap::from([(
+            "recent".to_string(),
+            session("recent", now - UNUSED_RETENTION_SECS + 1),
+        )]);
+
+        assert!(!prune_unused(&mut sessions, now));
     }
 }

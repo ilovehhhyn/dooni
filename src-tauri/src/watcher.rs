@@ -228,6 +228,13 @@ fn refresh_session_meta(files: &[PathBuf], app: &AppHandle, state: &Arc<AppState
             if entry.last_active != mtime { entry.last_active = mtime; changed = true; }
             if entry.running != running { entry.running = running; changed = true; }
         }
+        let now_secs = now
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|duration| duration.as_secs())
+            .unwrap_or(0);
+        if session_store::prune_unused(&mut map, now_secs) {
+            changed = true;
+        }
         snapshot = map.values().cloned().collect();
     }
     if changed {
