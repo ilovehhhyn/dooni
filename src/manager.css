@@ -27,7 +27,13 @@
   opacity: 0.7;
 }
 .lock-btn-inline:hover { opacity: 1; }
-.mgr-controls { display: flex; align-items: center; gap: 5px; }
+.mgr-controls {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 5px;
+}
 .retention-control {
   display: flex;
   align-items: center;
@@ -42,6 +48,21 @@
   font-family: inherit;
   font-size: 10px;
   background: #fff;
+}
+.icon-color-control {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 9px;
+  white-space: nowrap;
+}
+.icon-color-control input {
+  width: 28px;
+  height: 20px;
+  padding: 1px;
+  border: 1px solid #000;
+  background: #fff;
+  cursor: pointer;
 }
 .mgr-toggle {
   background: #fff;
@@ -90,27 +111,27 @@
   transform-origin: 0 0;
   width: 2px;
   height: 2px;
-  background: #7a7a7a;
+  background: var(--dooni-icon-color);
   box-shadow:
-    6px -2px #7a7a7a,
-    8px -2px #7a7a7a,
-    10px -2px #7a7a7a,
-    -4px 0 #7a7a7a,
-    -2px 0 #7a7a7a,
-    -4px 4px #7a7a7a,
-    -2px 4px #7a7a7a,
-    2px 0 #7a7a7a,
-    4px 0 #7a7a7a,
-    6px 0 #7a7a7a,
-    8px 0 #7a7a7a,
-    10px 0 #7a7a7a,
-    -4px 2px #7a7a7a,
-    -2px 2px #7a7a7a,
-    0 2px #7a7a7a,
-    2px 2px #7a7a7a,
-    12px 2px #7a7a7a,
-    12px 4px #7a7a7a,
-    12px 6px #7a7a7a;
+    6px -2px var(--dooni-icon-color),
+    8px -2px var(--dooni-icon-color),
+    10px -2px var(--dooni-icon-color),
+    -4px 0 var(--dooni-icon-color),
+    -2px 0 var(--dooni-icon-color),
+    -4px 4px var(--dooni-icon-color),
+    -2px 4px var(--dooni-icon-color),
+    2px 0 var(--dooni-icon-color),
+    4px 0 var(--dooni-icon-color),
+    6px 0 var(--dooni-icon-color),
+    8px 0 var(--dooni-icon-color),
+    10px 0 var(--dooni-icon-color),
+    -4px 2px var(--dooni-icon-color),
+    -2px 2px var(--dooni-icon-color),
+    0 2px var(--dooni-icon-color),
+    2px 2px var(--dooni-icon-color),
+    12px 2px var(--dooni-icon-color),
+    12px 4px var(--dooni-icon-color),
+    12px 6px var(--dooni-icon-color);
 }
 
 /* --- Castle SVG --- */

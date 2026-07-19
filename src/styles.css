@@ -1,3 +1,4 @@
+:root { --dooni-icon-color: #000000; }
 * { box-sizing: border-box; margin: 0; padding: 0; }
 html, body { height: 100%; }
 body {
@@ -46,15 +47,15 @@ body {
   position: absolute;
   width: 6px; height: 6px;
   left: 0; top: 0;
-  background: #000;
+  background: var(--dooni-icon-color);
   box-shadow:
-     12px 0 #000,  18px 0 #000,  24px 0 #000,
-     6px 6px #000, 12px 6px #000, 18px 6px #000, 24px 6px #000, 30px 6px #000,
-     0 12px #000,  6px 12px #000, 12px 12px #fff, 18px 12px #000, 24px 12px #fff, 30px 12px #000, 36px 12px #000,
-     0 18px #000,  6px 18px #000, 12px 18px #000, 18px 18px #000, 24px 18px #000, 30px 18px #000, 36px 18px #000,
-     0 24px #000,  6px 24px #000, 12px 24px #000, 18px 24px #000, 24px 24px #000, 30px 24px #000, 36px 24px #000,
-     6px 30px #000, 12px 30px #000, 18px 30px #000, 24px 30px #000, 30px 30px #000,
-     12px 36px #000, 18px 36px #000, 24px 36px #000;
+     12px 0 var(--dooni-icon-color), 18px 0 var(--dooni-icon-color), 24px 0 var(--dooni-icon-color),
+     6px 6px var(--dooni-icon-color), 12px 6px var(--dooni-icon-color), 18px 6px var(--dooni-icon-color), 24px 6px var(--dooni-icon-color), 30px 6px var(--dooni-icon-color),
+     0 12px var(--dooni-icon-color), 6px 12px var(--dooni-icon-color), 12px 12px #fff, 18px 12px var(--dooni-icon-color), 24px 12px #fff, 30px 12px var(--dooni-icon-color), 36px 12px var(--dooni-icon-color),
+     0 18px var(--dooni-icon-color), 6px 18px var(--dooni-icon-color), 12px 18px var(--dooni-icon-color), 18px 18px var(--dooni-icon-color), 24px 18px var(--dooni-icon-color), 30px 18px var(--dooni-icon-color), 36px 18px var(--dooni-icon-color),
+     0 24px var(--dooni-icon-color), 6px 24px var(--dooni-icon-color), 12px 24px var(--dooni-icon-color), 18px 24px var(--dooni-icon-color), 24px 24px var(--dooni-icon-color), 30px 24px var(--dooni-icon-color), 36px 24px var(--dooni-icon-color),
+     6px 30px var(--dooni-icon-color), 12px 30px var(--dooni-icon-color), 18px 30px var(--dooni-icon-color), 24px 30px var(--dooni-icon-color), 30px 30px var(--dooni-icon-color),
+     12px 36px var(--dooni-icon-color), 18px 36px var(--dooni-icon-color), 24px 36px var(--dooni-icon-color);
 }
 .blob.wiggle { animation: wiggle 0.6s steps(4, end); }
 @keyframes wiggle {

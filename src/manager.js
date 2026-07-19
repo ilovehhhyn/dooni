@@ -13,6 +13,7 @@ const els = {
   status:  document.getElementById("mgr-status"),
   retentionDays: document.getElementById("retention-days"),
   retentionSave: document.getElementById("retention-save"),
+  iconColor: document.getElementById("icon-color"),
 };
 
 const slots = Array.from(els.castleSvg.querySelectorAll("[data-slot]"));
@@ -22,6 +23,10 @@ let sessions = [];
 let view = "castle";
 
 function setStatus(s) { els.status.textContent = s; }
+
+function applyIconColor(color) {
+  document.documentElement.style.setProperty("--dooni-icon-color", color || "#000000");
+}
 
 function paintSlot(slot, s) {
   slot.classList.remove("idle", "running", "session");
@@ -157,6 +162,8 @@ async function init() {
   try {
     const config = await window.__TAURI__.core.invoke("get_config");
     els.retentionDays.value = config.terminal_retention_days || 5;
+    els.iconColor.value = config.icon_color || "#000000";
+    applyIconColor(els.iconColor.value);
   } catch (e) { setStatus("config err: " + e); }
 
   els.retentionSave.addEventListener("click", async () => {
@@ -173,6 +180,26 @@ async function init() {
       setStatus(`idle entries kept for ${config.terminal_retention_days} days`);
     } catch (e) { setStatus("retention err: " + e); }
   });
+
+  els.iconColor.addEventListener("input", () => applyIconColor(els.iconColor.value));
+  els.iconColor.addEventListener("change", async () => {
+    try {
+      const config = await window.__TAURI__.core.invoke(
+        "set_icon_color", { color: els.iconColor.value }
+      );
+      els.iconColor.value = config.icon_color;
+      applyIconColor(config.icon_color);
+      setStatus(`icon color ${config.icon_color}`);
+    } catch (e) { setStatus("icon color err: " + e); }
+  });
+
+  try {
+    await window.__TAURI__.event.listen("icon-color-updated", (evt) => {
+      const color = evt.payload || "#000000";
+      els.iconColor.value = color;
+      applyIconColor(color);
+    });
+  } catch (e) { setStatus("color listen err: " + e); }
 
   // Delegated slot handlers so we don't re-bind on every render.
   els.castleSvg.addEventListener("mousemove", (e) => {

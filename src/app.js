@@ -87,6 +87,10 @@ function setupLockButton() {
 
 function setStatus(s) { if (status) status.textContent = s; }
 
+function applyIconColor(color) {
+  document.documentElement.style.setProperty("--dooni-icon-color", color || "#000000");
+}
+
 function render(topics) {
   hasTopics = !!(topics && topics.length);
   ul.innerHTML = "";
@@ -142,9 +146,14 @@ async function init() {
   mode      = cfg.mode || "curt";
   onboarded = !!cfg.onboarded;
   userName  = cfg.name || "";
+  applyIconColor(cfg.icon_color);
   toggleBtn.textContent = mode;
   setupLockButton();
   refreshGreeting();
+
+  try {
+    await listen("icon-color-updated", (evt) => applyIconColor(evt.payload));
+  } catch (e) { setStatus("color listen err: " + e); }
 
   // --- Session window: just render memo ---
   if (isSessionWindow()) {

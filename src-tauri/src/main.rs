@@ -10,6 +10,7 @@ mod focus;
 
 use std::sync::{Arc, Mutex};
 use std::collections::{HashMap, HashSet};
+use tauri::Emitter;
 
 #[derive(Default)]
 pub struct AppState {
@@ -60,6 +61,7 @@ fn get_config(state: tauri::State<Arc<AppState>>) -> config::Config {
     let mut cfg = state.config.lock().unwrap().clone();
     cfg.terminal_retention_days =
         config::effective_terminal_retention_days(cfg.terminal_retention_days);
+    cfg.icon_color = config::effective_icon_color(&cfg.icon_color);
     cfg
 }
 
@@ -148,6 +150,23 @@ fn set_terminal_retention_days(
     Ok(cfg.clone())
 }
 
+#[tauri::command]
+fn set_icon_color(
+    app: tauri::AppHandle,
+    state: tauri::State<Arc<AppState>>,
+    color: String,
+) -> Result<config::Config, String> {
+    let color = config::normalize_icon_color(&color)
+        .ok_or_else(|| "icon color must be a six-digit hex color such as #7c3aed".to_string())?;
+    let mut cfg = state.config.lock().unwrap();
+    cfg.icon_color = color.clone();
+    config::save(&cfg).map_err(|e| e.to_string())?;
+    let updated = cfg.clone();
+    drop(cfg);
+    let _ = app.emit("icon-color-updated", color);
+    Ok(updated)
+}
+
 fn main() {
     let cfg = config::load();
     let meta = session_store::load();
@@ -164,7 +183,8 @@ fn main() {
         .manage(state.clone())
         .invoke_handler(tauri::generate_handler![
             get_topics, clear_topics, get_config, save_config, set_mode,
-            get_sessions, rename_session, focus_session, set_terminal_retention_days
+            get_sessions, rename_session, focus_session, set_terminal_retention_days,
+            set_icon_color
         ])
         .setup(move |app| {
             let handle = app.handle().clone();
