@@ -1,16 +1,11 @@
 # dooni
 
-a tiny always-on-top desktop widget that keeps a running memo of your AI coding chat sessions (Claude Code, Codex CLI). 
+a small desktop companion for tracking your Codex and Claude coding chats, keeping a running memo of each session (Claude Code, Codex CLI). 
 
 long chats accumulate twists and turns that could fleet your mind; but don't fret! 
 
 dooni keeps a persistent, glanceable running list so you never lose the thread.
 
-  <p align="center">                                                                                                     
-    <img width="340" height="500" alt="Screenshot 2026-07-07 at 2 50 34 AM"                                              
-  src="https://github.com/user-attachments/assets/431cf34d-b371-4cc6-b148-be0d23f4701f" />                               
-  </p> 
-  
 ## What it does
 
 - After signup, dooni shows one chat list.
