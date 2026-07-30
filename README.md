@@ -13,15 +13,14 @@ dooni keeps a persistent, glanceable running list so you never lose the thread.
   
 ## What it does
 
-- Pops up in the corner of your screen while you're chatting with `claude` or `codex` in a terminal.
-- Watches your local session transcripts and, every few prompts, updates a running memo of what you've talked about.
-- The list only ever grows unless you clear it: you can glance at it any time to remember what this session has covered.
-- Two modes toggled from the top-right corner:
-  - **curt**: short bullet topics (e.g. `▢ Tauri event permissions`)
-  - **wordy**: full sentences (e.g. `▢ Helen asked why events weren't received, and the assistant found a missing capability`)
-  - Switching modes only affects new entries; existing entries stay as they were.
-- Aha moments get a 💡 prefix
-- Multiple chat sessions running at once? Each gets its own dooni window, with its own memo, spawned automatically the first time dooni notices activity in that session.
+- After signup, dooni shows one chat list.
+- It tracks the newest 20 Codex and Claude JSONL chats. Older entries and their windows are removed.
+- Notes windows open only from the open icon, and they are not pinned by default.
+- Each note has two sections:
+  - **Asked**: your prompts, mirrored verbatim from the source chat. Internal context messages and continuation-only messages are excluded.
+  - **Future prompts**: prompts you write yourself. They are editable and checkable. Enter adds a prompt, and Command/Control+Enter inserts a newline.
+- AI is used only to generate titles and to classify continuation-only prompts.
+- The interface is white monochrome. The blob appears during signup only, with no castle and no post-signup branding.
 
 ## Install
 
@@ -40,19 +39,12 @@ Then:
 ```sh
 git clone https://github.com/ilovehhhyn/dooni.git
 cd dooni
-npm install
-npm run dev
+./dooni install
 ```
 
-`npm run dev` runs a quick prerequisite check first — if Rust is missing (or just not on your PATH), it prints exactly what to do instead of a cryptic `cargo metadata` error. The first build compiles all Rust dependencies and takes a few minutes; later launches are fast.
+dooni is free. The app is not signed or notarized.
 
-Grab an Anthropic API key at https://console.anthropic.com/settings/keys and paste it into the onboarding form on first launch.
-
-To build a distributable `.app`:
-
-```sh
-npm run build
-```
+Codex runtime authentication is the default, so you do not need an API key to start. The Anthropic runtime is optional.
 
 ## How to change settings
 
@@ -69,18 +61,11 @@ CFG=~/Library/Application\ Support/dooni/config.json
 
 ### How to change default memo mode
 
-```sh
-jq '.mode = "wordy"' "$CFG" > "$CFG.tmp" && mv "$CFG.tmp" "$CFG"
-# or "curt"
-```
-
-You can also just click the toggle in the top-right of the dooni window (no restart needed).
+There is no memo mode to change. The curt and default memo modes were removed, along with the mode toggle. Asked now always mirrors substantive source prompts verbatim, excluding internal context and continuation-only messages.
 
 ### How to update API key
 
-```sh
-jq '.api_key = "sk-ant-NEW"' "$CFG" > "$CFG.tmp" && mv "$CFG.tmp" "$CFG"
-```
+An API key is only needed for the optional Anthropic runtime; Codex runtime authentication is the default. Change the key in Settings.
 
 ### Reset onboarding
 
@@ -95,5 +80,3 @@ Next launch will show the welcome + onboarding screens again.
 See [BUILD_PLAN.md](./BUILD_PLAN.md) for architecture, JSONL parsing rules, prompt design, known limitations, and the full rationale.
 
 <p align="center"><img src="docs/logo.png" alt="dooni" width="120" /></p>
-
-
