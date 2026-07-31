@@ -11,11 +11,11 @@ dooni keeps a persistent, glanceable running list so you never lose the thread.
 - After signup, dooni shows one chat list.
 - Each launch begins with an empty chat list. A Codex, Claude, or terminal chat is admitted only after its first new user turn after dooni launches.
 - The list retains at most the 20 newest admitted chats. Older entries and their windows are removed.
-- On first admission, the selected runtime is asked what the chat is about, reads bounded chat content, and generates a descriptive title. dooni prefixes a repository or folder name as `project · title` when available. Titles are reconsidered after every five substantive user prompts unless you rename a chat manually, which locks its title.
+- On first admission, the selected runtime is asked what the chat is about, reads bounded chat content, and generates a descriptive title. Titles are limited to 180 characters and stop at a word boundary. Repository names are no longer prefixed to titles. Each list entry shows a metadata line of `repository or folder name | coding agent` when a project name is available, and only the coding agent otherwise. Titles are reconsidered after every five substantive user prompts unless you rename a chat manually, which locks its title.
 - Notes windows open only from the open icon, and they are not pinned by default.
 - Each note has two tabs:
   - **Future prompts**: the first and default tab. These are prompts you write yourself. They are editable and checkable. Enter adds a prompt, and Command/Control+Enter inserts a newline.
-  - **Asked**: the second tab. It contains your source prompts after removing generated file-attachment scaffolding, internal context, and continuation-only messages.
+  - **Asked**: the second tab. It contains your source prompts after removing generated file-attachment scaffolding, internal context, and continuation-only messages. Prompts are grouped by the source prompt timestamp in your local calendar day, and each new day starts with a date label and a subtle separator line.
 - AI is used only to generate titles and to classify continuation-only prompts.
 - The interface is white monochrome. The blob appears during signup only, with no castle and no post-signup branding.
 
