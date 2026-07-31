@@ -2,141 +2,71 @@
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>dooni · house manager</title>
+  <title>Chats</title>
   <link rel="stylesheet" href="styles.css" />
   <link rel="stylesheet" href="manager.css" />
 </head>
 <body class="mgr-body">
-  <div class="mgr-header">
-    <button id="lock-btn" class="lock-btn lock-btn-inline" title="pin on top">🔒</button>
-    <button id="mgr-toggle" class="mgr-toggle" type="button">list</button>
-  </div>
-
-  <div id="mgr-castle" class="mgr-view no-scroll">
-    <div class="scene">
-      <div class="dooni">
-        <div class="blob"></div>
-        <div class="beak"></div>
-      </div>
-
-      <svg id="castle-svg" class="castle-svg" viewBox="0 0 320 480" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMax slice" shape-rendering="crispEdges">
-
-        <!-- BACK LAYER (lightest) — main house body + tall central spire. -->
-        <g fill="#2b2b2d">
-          <!-- main house body (taller) -->
-          <rect x="90" y="240" width="140" height="240"/>
-          <rect x="94"  y="232" width="14" height="8"/>
-          <rect x="118" y="232" width="14" height="8"/>
-          <rect x="142" y="232" width="14" height="8"/>
-          <rect x="166" y="232" width="14" height="8"/>
-          <rect x="190" y="232" width="14" height="8"/>
-          <rect x="214" y="232" width="12" height="8"/>
-
-          <!-- central spire (longer than before) -->
-          <rect x="145" y="80" width="30" height="160"/>
-          <rect x="145" y="72" width="6" height="8"/>
-          <rect x="155" y="72" width="6" height="8"/>
-          <rect x="165" y="72" width="6" height="8"/>
-          <rect x="141" y="64" width="38" height="8"/>
-          <rect x="145" y="56" width="30" height="8"/>
-          <rect x="149" y="48" width="22" height="8"/>
-          <rect x="153" y="40" width="14" height="8"/>
-          <rect x="157" y="32" width="6"  height="8"/>
-        </g>
-        <rect data-slot="0" x="106" y="268" width="12" height="26" class="win"/>
-        <rect data-slot="1" x="130" y="268" width="12" height="26" class="win"/>
-        <rect data-slot="2" x="178" y="268" width="12" height="26" class="win"/>
-        <rect data-slot="3" x="202" y="268" width="12" height="26" class="win"/>
-        <rect data-slot="4" x="106" y="320" width="12" height="26" class="win"/>
-        <rect data-slot="5" x="202" y="320" width="12" height="26" class="win"/>
-        <rect data-slot="6" x="155" y="96"  width="10" height="22" class="win"/>
-        <rect data-slot="7" x="155" y="140" width="10" height="22" class="win"/>
-
-        <!-- MID LAYER — L-shaped side towers. Vertical stem on the outside,
-             horizontal foot stemming inward into the main house body. -->
-        <g fill="#3a3a3c">
-          <!-- LEFT L: vertical stem on the far left + rightward foot -->
-          <rect x="40"  y="180" width="28" height="280"/>  <!-- vertical stem -->
-          <rect x="68"  y="420" width="30" height="40"/>   <!-- foot into main body -->
-          <!-- crown + stepped cone on top of stem -->
-          <rect x="40" y="172" width="4"  height="8"/>
-          <rect x="48" y="172" width="4"  height="8"/>
-          <rect x="56" y="172" width="4"  height="8"/>
-          <rect x="64" y="172" width="4"  height="8"/>
-          <rect x="38" y="164" width="32" height="8"/>
-          <rect x="42" y="156" width="24" height="8"/>
-          <rect x="46" y="148" width="16" height="8"/>
-          <rect x="50" y="140" width="8"  height="8"/>
-          <rect x="52" y="132" width="4"  height="8"/>
-
-          <!-- RIGHT L: mirror -->
-          <rect x="252" y="180" width="28" height="280"/>
-          <rect x="222" y="420" width="30" height="40"/>
-          <rect x="252" y="172" width="4"  height="8"/>
-          <rect x="260" y="172" width="4"  height="8"/>
-          <rect x="268" y="172" width="4"  height="8"/>
-          <rect x="276" y="172" width="4"  height="8"/>
-          <rect x="250" y="164" width="32" height="8"/>
-          <rect x="254" y="156" width="24" height="8"/>
-          <rect x="258" y="148" width="16" height="8"/>
-          <rect x="262" y="140" width="8"  height="8"/>
-          <rect x="264" y="132" width="4"  height="8"/>
-        </g>
-        <rect data-slot="8"  x="49" y="200" width="10" height="22" class="win"/>
-        <rect data-slot="9"  x="49" y="260" width="10" height="22" class="win"/>
-        <rect data-slot="10" x="49" y="330" width="10" height="22" class="win"/>
-        <rect data-slot="11" x="261" y="200" width="10" height="22" class="win"/>
-        <rect data-slot="12" x="261" y="260" width="10" height="22" class="win"/>
-        <rect data-slot="13" x="261" y="330" width="10" height="22" class="win"/>
-
-        <!-- FRONT LAYER (darkest) — cluster of small towers + door. -->
-        <g fill="#141416">
-          <rect x="94" y="372" width="26" height="108"/>
-          <rect x="94"  y="364" width="6" height="8"/>
-          <rect x="104" y="364" width="6" height="8"/>
-          <rect x="114" y="364" width="6" height="8"/>
-          <rect x="92"  y="356" width="30" height="8"/>
-          <rect x="96"  y="348" width="22" height="8"/>
-          <rect x="100" y="340" width="14" height="8"/>
-          <rect x="104" y="332" width="6"  height="8"/>
-
-          <rect x="140" y="384" width="34" height="96"/>
-          <rect x="138" y="376" width="38" height="8"/>
-          <rect x="142" y="368" width="30" height="8"/>
-          <rect x="146" y="360" width="22" height="8"/>
-          <rect x="150" y="352" width="14" height="8"/>
-          <rect x="154" y="344" width="6"  height="8"/>
-
-          <rect x="192" y="378" width="30" height="102"/>
-          <rect x="192" y="370" width="6" height="8"/>
-          <rect x="202" y="370" width="6" height="8"/>
-          <rect x="212" y="370" width="6" height="8"/>
-          <rect x="190" y="362" width="34" height="8"/>
-          <rect x="194" y="354" width="26" height="8"/>
-          <rect x="198" y="346" width="18" height="8"/>
-          <rect x="202" y="338" width="10" height="8"/>
-          <rect x="204" y="330" width="4"  height="8"/>
-
-          <!-- door -->
-          <rect x="150" y="424" width="14" height="36" fill="#050506"/>
-        </g>
-        <rect data-slot="14" x="102" y="396" width="10" height="20" class="win"/>
-        <rect data-slot="15" x="152" y="402" width="10" height="20" class="win"/>
-        <rect data-slot="16" x="202" y="402" width="10" height="20" class="win"/>
-        <rect data-slot="17" x="86" y="430" width="8" height="18" class="win"/>
-      </svg>
-
-      <div id="mgr-empty" class="mgr-empty hidden">no chat sessions yet</div>
+  <header class="mgr-toolbar">
+    <div class="toolbar-actions">
+      <button id="lock-btn" class="icon-button pin-button" type="button" title="Pin window" aria-label="Pin window" aria-pressed="false">
+        <svg viewBox="0 0 16 16" aria-hidden="true">
+          <circle cx="8" cy="8" r="5.5"></circle>
+        </svg>
+      </button>
+      <button id="settings-btn" class="icon-button" type="button" title="Settings" aria-label="Open settings">
+        <svg viewBox="0 0 16 16" aria-hidden="true">
+          <circle cx="8" cy="8" r="2.25"></circle>
+          <path d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M12.6 3.4l-1.4 1.4M4.8 11.2l-1.4 1.4"></path>
+        </svg>
+      </button>
     </div>
-  </div>
+    <span id="session-count" class="session-count"></span>
+  </header>
 
-  <div id="mgr-list" class="mgr-view hidden">
+  <main class="mgr-main">
     <ul id="mgr-list-ul" class="mgr-list"></ul>
-  </div>
+  </main>
 
-  <div id="mgr-tooltip" class="mgr-tooltip hidden"></div>
-  <div id="mgr-status" class="mgr-status"></div>
+  <section id="settings-panel" class="settings-panel hidden" aria-label="Settings">
+    <header class="settings-header">
+      <h1>settings</h1>
+      <button id="settings-close" class="icon-button" type="button" aria-label="Close settings">
+        <svg viewBox="0 0 16 16" aria-hidden="true">
+          <path d="M4 4l8 8M12 4l-8 8"></path>
+        </svg>
+      </button>
+    </header>
 
+    <div class="settings-group">
+      <h2>runtime</h2>
+      <div class="runtime-picker" role="group" aria-label="Title runtime">
+        <button class="runtime-option" data-runtime="codex" type="button">Codex</button>
+        <button class="runtime-option" data-runtime="anthropic" type="button">Anthropic</button>
+      </div>
+      <div id="codex-runtime" class="runtime-detail">
+        <span id="codex-runtime-state">checking</span>
+        <button id="codex-runtime-action" class="text-button" type="button"></button>
+      </div>
+      <div id="anthropic-runtime" class="runtime-detail hidden">
+        <input id="settings-anthropic-key" type="password" placeholder="Anthropic API key" autocomplete="off" />
+      </div>
+      <button id="runtime-save" class="primary-button" type="button">save runtime</button>
+    </div>
+
+    <div class="settings-group manual">
+      <h2>manual</h2>
+      <dl>
+        <div><dt>⌘⇧D</dt><dd>open notes for the current chat</dd></div>
+        <div><dt>chat title</dt><dd>surface the original chat</dd></div>
+        <div><dt>open</dt><dd>open notes in a new window</dd></div>
+        <div><dt>edit</dt><dd>rename and lock the title</dd></div>
+        <div><dt>circle</dt><dd>pin or unpin this window</dd></div>
+      </dl>
+    </div>
+  </section>
+
+  <div id="mgr-status" class="mgr-status" role="status" aria-live="polite"></div>
   <script src="manager.js"></script>
 </body>
 </html>

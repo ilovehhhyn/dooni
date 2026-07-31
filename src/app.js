@@ -1,221 +1,399 @@
-// dooni frontend. Runs in one of two window kinds:
-//   - the "main" window: welcome / greeting / onboarding
-//   - a "session-<id>" window: dedicated memo for one chat session
-// Rendering logic per window is unchanged from the single-window version;
-// this file just picks which screens the window is allowed to show.
+// The main window handles onboarding; launched chat windows show the user's
+// source-history prompts and editable future-prompt scratch notes.
 
 const screens = {
-  welcome:  document.getElementById("screen-welcome"),
-  greeting: document.getElementById("screen-greeting"),
-  onboard:  document.getElementById("screen-onboard"),
-  memo:     document.getElementById("screen-memo"),
+  onboard: document.getElementById("screen-onboard"),
+  memo: document.getElementById("screen-memo"),
 };
 
-const status       = document.getElementById("status");
-const ul           = document.getElementById("topics");
-const toggleBtn    = document.getElementById("toggle");
-const greetingText = document.getElementById("greeting-text");
-const memoSub      = document.getElementById("memo-sub");
+const els = {
+  status: document.getElementById("status"),
+  asked: document.getElementById("asked-prompts"),
+  prompts: document.getElementById("future-prompts"),
+  promptForm: document.getElementById("prompt-form"),
+  promptInput: document.getElementById("prompt-input"),
+  memoTitle: document.getElementById("memo-title"),
+  askedCount: document.getElementById("asked-count"),
+  promptCount: document.getElementById("prompt-count"),
+};
 
-let mode          = "curt";
-let onboarded     = false;
-let sessionActive = false;
-let hasTopics     = false;
-let userName      = "";
-let windowLabel   = "main";
-let sessionId     = null; // null on the main window; string on session windows
-
-function isSessionWindow() { return sessionId !== null; }
+let onboarded = false;
+let userName = "";
+let sessionId = null;
+let askedPrompts = [];
+let askedPromptTimestamps = [];
+let futurePrompts = [];
 
 function showScreen(name) {
-  for (const [k, el] of Object.entries(screens)) {
-    if (!el) continue;
-    el.classList.toggle("hidden", k !== name);
+  for (const [key, el] of Object.entries(screens)) {
+    if (el) el.classList.toggle("hidden", key !== name);
   }
-}
-
-function pickGreeting(name) {
-  const options = [
-    `dooni says hi to ${name}`,
-    `dooni hopes ${name} is having a good day`,
-    `dooni hopes ${name} is drinking water`,
-    `dooni missed ${name}`,
-    `hi ${name}, dooni is here`,
-  ];
-  return options[Math.floor(Math.random() * options.length)];
 }
 
 function chooseScreen() {
-  if (isSessionWindow()) {
-    showScreen("memo");
-    return;
-  }
-  if (!onboarded) {
-    showScreen(sessionActive ? "onboard" : "welcome");
-    return;
-  }
-  showScreen("greeting");
-  // Greeting text is chosen once at startup and refreshed every 3h — don't
-  // re-pick on every session-active tick (was flickering the phrase).
+  if (sessionId) return showScreen("memo");
+  if (!onboarded) return showScreen("onboard");
+  window.location.replace("manager.html");
 }
 
-function refreshGreeting() {
-  if (greetingText) greetingText.textContent = pickGreeting(userName || "you");
+function readOwnLabel() {
+  try {
+    const api = window.__TAURI__.window;
+    const getter = api.getCurrentWindow || api.getCurrent;
+    return getter ? getter.call(api).label || "main" : "main";
+  } catch (_) {
+    return "main";
+  }
 }
 
-const GREETING_REFRESH_MS = 3 * 60 * 60 * 1000;
-setInterval(refreshGreeting, GREETING_REFRESH_MS);
+function setStatus(text) {
+  if (!els.status) return;
+  els.status.textContent = text;
+  els.status.classList.toggle("visible", !!text);
+}
 
-// --- always-on-top lock (per window) ---
-let pinned = true; // windows are created with alwaysOnTop=true
+function wiggle() {
+  document.querySelectorAll(".blob").forEach((blob) => {
+    blob.classList.remove("wiggle");
+    void blob.offsetWidth;
+    blob.classList.add("wiggle");
+  });
+}
+
 function setupLockButton() {
   const btn = document.getElementById("lock-btn");
   if (!btn) return;
-  const paint = () => { btn.textContent = pinned ? "🔒" : "🔓"; };
+  let pinned = false;
+  const paint = () => {
+    btn.setAttribute("aria-pressed", String(pinned));
+    btn.title = pinned ? "Unpin window" : "Pin window";
+  };
   paint();
   btn.addEventListener("click", async () => {
     pinned = !pinned;
     paint();
     try {
-      const w = window.__TAURI__ && window.__TAURI__.window;
-      const getter = w && (w.getCurrentWindow || w.getCurrent);
-      const cur = getter ? getter.call(w) : null;
-      if (cur && cur.setAlwaysOnTop) await cur.setAlwaysOnTop(pinned);
-    } catch (e) { console.error("lock err", e); }
-  });
-}
-
-function setStatus(s) { if (status) status.textContent = s; }
-
-function render(topics) {
-  hasTopics = !!(topics && topics.length);
-  ul.innerHTML = "";
-  if (!hasTopics) {
-    const li = document.createElement("li");
-    li.className = "empty";
-    li.textContent = "// no topics yet, start chatting";
-    ul.appendChild(li);
-  } else {
-    for (const t of topics) {
-      const li = document.createElement("li");
-      li.textContent = t;
-      ul.appendChild(li);
+      const api = window.__TAURI__.window;
+      const getter = api.getCurrentWindow || api.getCurrent;
+      const current = getter ? getter.call(api) : null;
+      if (current?.setAlwaysOnTop) await current.setAlwaysOnTop(pinned);
+    } catch (error) {
+      console.error("pin error", error);
     }
-    ul.parentElement.scrollTop = ul.parentElement.scrollHeight;
-  }
-}
-
-function wiggleAll() {
-  document.querySelectorAll(".blob").forEach(b => {
-    b.classList.remove("wiggle");
-    void b.offsetWidth;
-    b.classList.add("wiggle");
   });
 }
 
-function readOwnLabel() {
-  try {
-    const w = window.__TAURI__.window;
-    // Tauri v2 exposes getCurrentWindow; older betas used getCurrent.
-    const getter = w.getCurrentWindow || w.getCurrent;
-    const cur = getter ? getter.call(w) : null;
-    if (cur && cur.label) return cur.label;
-  } catch (_) {}
-  return "main";
+function editableText(text, onSave) {
+  const value = document.createElement("span");
+  value.className = "editable-text";
+  value.contentEditable = "true";
+  value.spellcheck = true;
+  value.textContent = text;
+  value.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      value.blur();
+    }
+  });
+  value.addEventListener("blur", () => onSave(value.textContent.trim(), value));
+  return value;
 }
 
-async function init() {
-  if (!window.__TAURI__) {
-    setStatus("NO __TAURI__");
-    showScreen("welcome");
-    return;
+async function persistPrompts() {
+  await window.__TAURI__.core.invoke("save_future_prompts", {
+    sessionId,
+    prompts: futurePrompts,
+  });
+}
+
+function renderAskedPrompts() {
+  els.asked.innerHTML = "";
+  let previousDay = null;
+  askedPrompts.forEach((prompt, index) => {
+    const day = promptDay(askedPromptTimestamps[index]);
+    if (day.key !== previousDay) {
+      const divider = document.createElement("li");
+      divider.className = "asked-day-divider";
+      const date = document.createElement("time");
+      date.textContent = day.label;
+      if (day.dateTime) date.dateTime = day.dateTime;
+      divider.appendChild(date);
+      els.asked.appendChild(divider);
+      previousDay = day.key;
+    }
+    const item = document.createElement("li");
+    item.className = "asked-prompt";
+    item.textContent = prompt;
+    els.asked.appendChild(item);
+  });
+  els.askedCount.textContent = askedPrompts.length;
+}
+
+function promptDay(timestamp) {
+  const date = timestamp ? new Date(timestamp) : null;
+  if (!date || Number.isNaN(date.getTime())) {
+    return { key: "earlier", label: "Earlier", dateTime: "" };
   }
-  const { invoke } = window.__TAURI__.core;
-  const { listen } = window.__TAURI__.event;
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return {
+    key: `${year}-${month}-${day}`,
+    label: new Intl.DateTimeFormat(undefined, {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+    }).format(date),
+    dateTime: `${year}-${month}-${day}`,
+  };
+}
 
-  windowLabel = readOwnLabel();
-  if (windowLabel.startsWith("session-")) {
-    sessionId = windowLabel.slice("session-".length);
-  }
+function renderPrompts() {
+  els.prompts.innerHTML = "";
+  if (futurePrompts.length) {
+    futurePrompts.forEach((prompt, index) => {
+      const item = document.createElement("li");
+      item.className = prompt.done ? "prompt-item done" : "prompt-item";
 
-  const cfg = await invoke("get_config");
-  mode      = cfg.mode || "curt";
-  onboarded = !!cfg.onboarded;
-  userName  = cfg.name || "";
-  toggleBtn.textContent = mode;
-  setupLockButton();
-  refreshGreeting();
-
-  // --- Session window: just render memo ---
-  if (isSessionWindow()) {
-    memoSub.textContent = `session ${sessionId.slice(0, 12)}`;
-    try {
-      const topics = await invoke("get_topics", { sessionId });
-      render(topics);
-      setStatus(`${topics.length} entries`);
-    } catch (e) { setStatus("invoke err: " + e); }
-
-    try {
-      await listen("topics-updated", (evt) => {
-        const p = evt.payload || {};
-        if (p.session_id !== sessionId) return;
-        render(p.topics || []);
-        setStatus(`updated ${(p.topics || []).length} @ ${new Date().toLocaleTimeString()}`);
-        wiggleAll();
+      const check = document.createElement("button");
+      check.className = "prompt-check";
+      check.type = "button";
+      check.setAttribute("aria-label", prompt.done ? "Mark not done" : "Mark done");
+      check.textContent = prompt.done ? "✓" : "";
+      check.addEventListener("click", async () => {
+        prompt.done = !prompt.done;
+        renderPrompts();
+        try { await persistPrompts(); } catch (error) { setStatus(`save error: ${error}`); }
       });
-    } catch (e) { setStatus("listen err: " + e); }
 
-    toggleBtn.addEventListener("click", async () => {
-      mode = mode === "curt" ? "wordy" : "curt";
-      toggleBtn.textContent = mode;
-      try { await invoke("set_mode", { mode }); } catch (e) { setStatus("mode err: " + e); }
-      wiggleAll();
+      const text = editableText(prompt.text, async (next, target) => {
+        if (!next) {
+          futurePrompts.splice(index, 1);
+          renderPrompts();
+        } else {
+          prompt.text = next;
+          target.textContent = next;
+        }
+        try { await persistPrompts(); } catch (error) { setStatus(`save error: ${error}`); }
+      });
+
+      const remove = document.createElement("button");
+      remove.className = "remove-line";
+      remove.type = "button";
+      remove.title = "remove";
+      remove.setAttribute("aria-label", "Remove prompt");
+      remove.innerHTML = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8"></path></svg>';
+      remove.addEventListener("click", async () => {
+        futurePrompts.splice(index, 1);
+        renderPrompts();
+        try { await persistPrompts(); } catch (error) { setStatus(`save error: ${error}`); }
+      });
+
+      item.append(check, text, remove);
+      els.prompts.appendChild(item);
     });
+  }
+  els.promptCount.textContent = futurePrompts.filter((prompt) => !prompt.done).length;
+}
 
-    document.getElementById("clear").addEventListener("click", async () => {
-      const topics = await invoke("clear_topics", { sessionId });
-      render(topics);
+function setupTabs() {
+  document.querySelectorAll(".tab").forEach((tab) => {
+    tab.addEventListener("click", () => {
+      const target = tab.dataset.tab;
+      document.querySelectorAll(".tab").forEach((item) => item.classList.toggle("active", item === tab));
+      document.querySelectorAll(".panel").forEach((panel) => {
+        panel.classList.toggle("active", panel.id === `panel-${target}`);
+      });
+      if (target === "future") requestAnimationFrame(() => els.promptInput.focus());
     });
+  });
+}
 
+function newPromptId() {
+  return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+async function initSession(invoke, listen) {
+  const data = await invoke("get_session", { sessionId });
+  if (!data) {
+    setStatus("This chat is no longer tracked.");
     chooseScreen();
     return;
   }
+  askedPrompts = Array.isArray(data.asked_prompts) ? data.asked_prompts : [];
+  askedPromptTimestamps = Array.isArray(data.asked_prompt_timestamps)
+    ? data.asked_prompt_timestamps
+    : [];
+  futurePrompts = Array.isArray(data.future_prompts) ? data.future_prompts : [];
+  els.memoTitle.textContent = data.title || "untitled chat";
+  renderAskedPrompts();
+  renderPrompts();
+  setupTabs();
 
-  // --- Main window: welcome / greeting / onboarding ---
-  document.getElementById("ob-save").addEventListener("click", async () => {
-    const name  = document.getElementById("ob-name").value.trim();
-    const anth  = document.getElementById("ob-anthropic-key").value.trim();
-    const codex = document.getElementById("ob-codex-key").value.trim();
-    const err   = document.getElementById("ob-error");
-    if (!name) { err.textContent = "name required"; return; }
-    if (!anth && !codex) { err.textContent = "one api key required"; return; }
-    const key = anth || codex;
+  els.promptForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const text = els.promptInput.value.trim();
+    if (!text) return;
+    futurePrompts.push({ id: newPromptId(), text, done: false });
+    els.promptInput.value = "";
+    resizePromptInput();
+    renderPrompts();
+    try { await persistPrompts(); } catch (error) { setStatus(`save error: ${error}`); }
+  });
+  els.promptInput.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" || event.isComposing) return;
+    if (event.metaKey || event.ctrlKey) {
+      event.preventDefault();
+      const start = els.promptInput.selectionStart;
+      const end = els.promptInput.selectionEnd;
+      els.promptInput.setRangeText("\n", start, end, "end");
+      resizePromptInput();
+      return;
+    }
+    event.preventDefault();
+    els.promptForm.requestSubmit();
+  });
+  els.promptInput.addEventListener("input", resizePromptInput);
+  await listen("asked-prompts-updated", (event) => {
+    const payload = event.payload || {};
+    if (payload.session_id !== sessionId) return;
+    askedPrompts = Array.isArray(payload.asked_prompts) ? payload.asked_prompts : [];
+    askedPromptTimestamps = Array.isArray(payload.asked_prompt_timestamps)
+      ? payload.asked_prompt_timestamps
+      : [];
+    if (payload.title) els.memoTitle.textContent = payload.title;
+    renderAskedPrompts();
+  });
+  chooseScreen();
+  requestAnimationFrame(() => els.promptInput.focus());
+}
+
+async function initMain(invoke, listen) {
+  const codexAction = document.getElementById("ob-codex-action");
+  const codexStatusText = document.getElementById("ob-codex-status");
+  const codexDot = document.getElementById("ob-codex-dot");
+  const anthropicToggle = document.getElementById("ob-use-anthropic");
+  const anthropicPanel = document.getElementById("ob-anthropic-panel");
+  const error = document.getElementById("ob-error");
+  let codexStatus = { installed: false, authenticated: false };
+
+  async function finishOnboarding(runtimeProvider, apiKey = "") {
+    const name = document.getElementById("ob-name").value.trim();
+    if (!name) return void (error.textContent = "name required");
     try {
       await invoke("save_config", {
-        apiKey: key,
+        apiKey,
+        runtimeProvider,
         name,
         agents: ["claude", "codex"],
-        mode: "curt",
       });
       onboarded = true;
-      userName  = name;
-      mode      = "curt";
-      toggleBtn.textContent = mode;
-      wiggleAll();
-      setTimeout(chooseScreen, 900);
-    } catch (e) {
-      err.textContent = "save error: " + e;
+      userName = name;
+      wiggle();
+      setTimeout(() => window.location.replace("manager.html"), 350);
+    } catch (saveError) {
+      error.textContent = `save error: ${saveError}`;
+    }
+  }
+
+  function paintCodexStatus() {
+    codexDot.className = "auth-dot";
+    codexAction.disabled = false;
+    if (!codexStatus.installed) {
+      codexDot.classList.add("missing");
+      codexStatusText.textContent = "not installed";
+      codexAction.textContent = "install Codex CLI";
+    } else if (!codexStatus.authenticated) {
+      codexStatusText.textContent = "not connected";
+      codexAction.textContent = "sign in with Codex";
+    } else {
+      codexDot.classList.add("connected");
+      codexStatusText.textContent = "connected";
+      codexAction.textContent = "continue with Codex";
+    }
+  }
+
+  async function refreshCodexStatus() {
+    try {
+      codexStatus = await invoke("get_codex_status");
+      paintCodexStatus();
+    } catch (statusError) {
+      codexAction.disabled = false;
+      codexAction.textContent = "check Codex again";
+      error.textContent = `Codex check failed: ${statusError}`;
+    }
+  }
+
+  codexAction.addEventListener("click", async () => {
+    error.textContent = "";
+    try {
+      if (!codexStatus.installed) {
+        await invoke("open_codex_install");
+        return;
+      }
+      if (!codexStatus.authenticated) {
+        codexAction.disabled = true;
+        codexAction.textContent = "opening sign in…";
+        await invoke("start_codex_login");
+        setTimeout(refreshCodexStatus, 1500);
+        return;
+      }
+      await finishOnboarding("codex");
+    } catch (actionError) {
+      error.textContent = `${actionError}`;
+      paintCodexStatus();
     }
   });
 
-  try {
-    await listen("session-active", (evt) => {
-      sessionActive = !!evt.payload;
-      chooseScreen();
-    });
-  } catch (e) { setStatus("listen err: " + e); }
+  anthropicToggle.addEventListener("click", () => {
+    anthropicPanel.classList.toggle("hidden");
+  });
+  document.getElementById("ob-anthropic-save").addEventListener("click", async () => {
+    const apiKey = document.getElementById("ob-anthropic-key").value.trim();
+    if (!apiKey) return void (error.textContent = "API key required");
+    await finishOnboarding("anthropic", apiKey);
+  });
+
+  await refreshCodexStatus();
+  setInterval(() => {
+    if (!onboarded && !codexStatus.authenticated) refreshCodexStatus();
+  }, 3000);
 
   chooseScreen();
 }
 
-init().catch(e => { setStatus("init err: " + e); showScreen("welcome"); });
+async function init() {
+  if (!window.__TAURI__) {
+    showScreen("onboard");
+    return;
+  }
+  const { invoke } = window.__TAURI__.core;
+  const { listen } = window.__TAURI__.event;
+  const label = readOwnLabel();
+  if (label.startsWith("session-")) sessionId = label.slice("session-".length);
+
+  const config = await invoke("get_config");
+  onboarded = !!config.onboarded;
+  userName = config.name || "";
+  const onboardingName = document.getElementById("ob-name");
+  if (onboardingName && userName) onboardingName.value = userName;
+  if (!sessionId && onboarded) {
+    window.location.replace("manager.html");
+    return;
+  }
+  setupLockButton();
+
+  if (sessionId) await initSession(invoke, listen);
+  else await initMain(invoke, listen);
+}
+
+function resizePromptInput() {
+  if (!els.promptInput) return;
+  els.promptInput.style.height = "auto";
+  els.promptInput.style.height = `${Math.min(els.promptInput.scrollHeight, 112)}px`;
+}
+
+init().catch((error) => {
+  setStatus(`init error: ${error}`);
+  showScreen(sessionId ? "memo" : "onboard");
+});

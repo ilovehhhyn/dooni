@@ -1,3 +1,4 @@
+use std::io::{BufRead, BufReader};
 use std::path::Path;
 
 /// Derive a stable session id from a JSONL log file path.
@@ -14,7 +15,13 @@ pub fn session_id_from_path(path: &Path) -> String {
 pub fn window_label_for(session_id: &str) -> String {
     let sanitized: String = session_id
         .chars()
-        .map(|c| if c.is_ascii_alphanumeric() || matches!(c, '-' | '_') { c } else { '-' })
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || matches!(c, '-' | '_') {
+                c
+            } else {
+                '-'
+            }
+        })
         .collect();
     format!("session-{sanitized}")
 }
@@ -23,9 +30,13 @@ pub fn window_label_for(session_id: &str) -> String {
 /// dooni watches. Returns "claude", "codex", or "unknown".
 pub fn agent_from_path(path: &Path) -> &'static str {
     let s = path.to_string_lossy();
-    if s.contains("/.claude/projects/") { "claude" }
-    else if s.contains("/.codex/sessions/") || s.contains("/.codex/history") { "codex" }
-    else { "unknown" }
+    if s.contains("/.claude/projects/") {
+        "claude"
+    } else if s.contains("/.codex/sessions/") || s.contains("/.codex/history") {
+        "codex"
+    } else {
+        "unknown"
+    }
 }
 
 /// Claude Code encodes the project directory as the parent folder of the
@@ -35,10 +46,98 @@ pub fn agent_from_path(path: &Path) -> &'static str {
 pub fn project_dir_from_path(path: &Path) -> Option<String> {
     let parent = path.parent()?;
     let name = parent.file_name()?.to_str()?;
-    if !name.starts_with('-') { return None; }
+    if !name.starts_with('-') {
+        return None;
+    }
     let decoded = name.replace('-', "/");
-    if decoded.is_empty() { return None; }
+    if decoded.is_empty() {
+        return None;
+    }
     Some(decoded)
+}
+
+/// Read the small metadata records at the start of a history file. Codex
+/// Desktop and Codex CLI share a history root, so the JSON is the reliable
+/// way to distinguish their surface and recover the working directory.
+pub fn history_context(path: &Path) -> (Option<String>, String) {
+    let path_project = project_dir_from_path(path);
+    let mut project_dir = path_project;
+    let mut surface = "terminal".to_string();
+    let Ok(file) = std::fs::File::open(path) else {
+        return (project_dir, surface);
+    };
+
+    for line in BufReader::new(file).lines().take(12).flatten() {
+        let Ok(v) = serde_json::from_str::<serde_json::Value>(&line) else {
+            continue;
+        };
+        let payload = v.get("payload").unwrap_or(&v);
+        if let Some(cwd) = payload.get("cwd").and_then(|x| x.as_str()) {
+            project_dir = Some(cwd.to_string());
+        }
+        if let Some(originator) = payload.get("originator").and_then(|x| x.as_str()) {
+            let origin = originator.to_ascii_lowercase();
+            if origin.contains("codex desktop") {
+                surface = "codex-app".to_string();
+            } else if origin.contains("claude desktop") {
+                surface = "claude-app".to_string();
+            }
+        }
+    }
+    (project_dir, surface)
+}
+
+/// Prefer the repository root name when the working directory sits inside a
+/// repository; otherwise use the working directory's final path component.
+pub fn project_label(project_dir: Option<&str>) -> Option<String> {
+    let project_dir = project_dir?.trim();
+    if project_dir.is_empty() {
+        return None;
+    }
+    let path = Path::new(project_dir);
+    for ancestor in path.ancestors() {
+        if ancestor.join(".git").exists() {
+            return ancestor
+                .file_name()
+                .and_then(|name| name.to_str())
+                .map(str::to_string);
+        }
+    }
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .filter(|name| !name.is_empty())
+        .map(str::to_string)
+}
+
+pub const MAX_TITLE_CHARS: usize = 180;
+
+/// Normalize a title and keep the full value within the UI's 180-character
+/// limit. Prefer ending at a word boundary instead of clipping mid-word.
+pub fn limit_title(title: &str) -> String {
+    let normalized = title.split_whitespace().collect::<Vec<_>>().join(" ");
+    if normalized.chars().count() < MAX_TITLE_CHARS {
+        return normalized;
+    }
+
+    let clipped = normalized.chars().take(MAX_TITLE_CHARS).collect::<String>();
+    let word_boundary = clipped
+        .char_indices()
+        .rev()
+        .find(|(_, character)| character.is_whitespace())
+        .map(|(index, _)| index)
+        .filter(|index| *index >= MAX_TITLE_CHARS / 2);
+    word_boundary
+        .map(|index| clipped[..index].trim_end().to_string())
+        .unwrap_or(clipped)
+}
+
+pub fn title_without_project_prefix(title: &str, project: Option<&str>) -> String {
+    if let Some(project) = project {
+        if let Some(real_title) = title.strip_prefix(&format!("{project} · ")) {
+            return real_title.to_string();
+        }
+    }
+    title.to_string()
 }
 
 /// Extract the session id back out of a window label (inverse of `window_label_for`).
@@ -87,7 +186,9 @@ mod tests {
     #[test]
     fn agent_from_path_classifies() {
         assert_eq!(
-            agent_from_path(&PathBuf::from("/Users/x/.claude/projects/-Users-x-repo/abc.jsonl")),
+            agent_from_path(&PathBuf::from(
+                "/Users/x/.claude/projects/-Users-x-repo/abc.jsonl"
+            )),
             "claude"
         );
         assert_eq!(
@@ -117,5 +218,39 @@ mod tests {
     fn project_dir_none_when_not_slug() {
         let p = PathBuf::from("/tmp/plain/abc.jsonl");
         assert_eq!(project_dir_from_path(&p), None);
+    }
+
+    #[test]
+    fn old_project_prefixes_can_be_removed() {
+        assert_eq!(
+            title_without_project_prefix("dooni · Track active AI chats", Some("dooni")),
+            "Track active AI chats"
+        );
+    }
+
+    #[test]
+    fn titles_stop_at_a_word_boundary_within_180_characters() {
+        let title = format!("{} complete", "word ".repeat(40));
+        let limited = limit_title(&title);
+        assert!(limited.chars().count() <= MAX_TITLE_CHARS);
+        assert!(!limited.ends_with("compl"));
+        assert!(!limited.ends_with(' '));
+    }
+
+    #[test]
+    fn titles_already_stored_at_the_limit_drop_a_dangling_fragment() {
+        let title = format!("{} short", "a".repeat(174));
+        assert_eq!(title.chars().count(), MAX_TITLE_CHARS);
+        let limited = limit_title(&title);
+        assert!(limited.chars().count() < MAX_TITLE_CHARS);
+        assert!(!limited.ends_with("short"));
+    }
+
+    #[test]
+    fn short_titles_are_only_whitespace_normalized() {
+        assert_eq!(
+            limit_title("  Track   active\nAI chats  "),
+            "Track active AI chats"
+        );
     }
 }

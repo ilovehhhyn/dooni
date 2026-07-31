@@ -15,6 +15,52 @@
 use anyhow::Result;
 use std::process::Command;
 
+/// Map the application that currently owns the menu bar to the surface values
+/// stored with chat sessions. The shortcut intentionally does nothing when it
+/// is pressed from an unrelated application.
+pub fn frontmost_chat_surface() -> Option<String> {
+    let name = run_osascript(
+        r#"tell application "System Events"
+    return name of first application process whose frontmost is true
+end tell"#,
+    )
+    .ok()?
+    .trim()
+    .to_ascii_lowercase();
+
+    if name.contains("codex") {
+        return Some("codex-app".to_string());
+    }
+    if name == "claude" || name.contains("claude") {
+        return Some("claude-app".to_string());
+    }
+    if [
+        "terminal",
+        "iterm",
+        "warp",
+        "ghostty",
+        "wezterm",
+        "kitty",
+        "alacritty",
+    ]
+    .iter()
+    .any(|terminal| name.contains(terminal))
+    {
+        return Some("terminal".to_string());
+    }
+    None
+}
+
+pub fn focus_chat_for(surface: &str, project_dir: Option<&str>) -> Result<bool> {
+    if surface == "codex-app" {
+        return activate_running_app(&["Codex"]);
+    }
+    if surface == "claude-app" {
+        return activate_running_app(&["Claude"]);
+    }
+    focus_terminal_for(project_dir)
+}
+
 pub fn focus_terminal_for(project_dir: Option<&str>) -> Result<bool> {
     let dir = project_dir.unwrap_or("").to_string();
     let basename = std::path::Path::new(&dir)
@@ -43,6 +89,20 @@ pub fn focus_terminal_for(project_dir: Option<&str>) -> Result<bool> {
         }
     }
 
+    Ok(false)
+}
+
+fn activate_running_app(names: &[&str]) -> Result<bool> {
+    for name in names {
+        if app_is_installed(name) {
+            let script = format!(
+                r#"tell application "{}" to activate"#,
+                name.replace('"', "\\\"")
+            );
+            run_osascript(&script)?;
+            return Ok(true);
+        }
+    }
     Ok(false)
 }
 

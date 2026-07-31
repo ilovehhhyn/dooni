@@ -1,0 +1,164 @@
+#!/bin/sh
+
+set -eu
+
+REPO_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+APP_NAME="dooni.app"
+APP_SOURCE="$REPO_DIR/src-tauri/target/release/bundle/macos/$APP_NAME"
+APP_DEST="$HOME/Applications/$APP_NAME"
+CLI_DIR="$HOME/.local/bin"
+CLI_LINK="$CLI_DIR/dooni"
+
+usage() {
+  printf '%s\n' \
+    "dooni — local installer and launcher" \
+    "" \
+    "usage:" \
+    "  ./dooni install [--desktop]  build and install the macOS app" \
+    "  dooni open                   launch the installed app" \
+    "  dooni uninstall              move the installed app to Trash" \
+    "" \
+    "The first install must be run as ./dooni install from the cloned repo."
+}
+
+install_app() {
+  desktop_shortcut=false
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --desktop) desktop_shortcut=true ;;
+      *)
+        printf 'dooni: unknown install option: %s\n' "$1" >&2
+        usage >&2
+        exit 2
+        ;;
+    esac
+    shift
+  done
+
+  if [ "$(uname -s)" != "Darwin" ]; then
+    printf '%s\n' "dooni: the app installer currently supports macOS only." >&2
+    exit 1
+  fi
+  if ! command -v npm >/dev/null 2>&1; then
+    printf '%s\n' "dooni: Node.js and npm are required. Install Node 18+ and try again." >&2
+    exit 1
+  fi
+  if ! xcode-select -p >/dev/null 2>&1; then
+    printf '%s\n' \
+      "dooni: Xcode command line tools are required." \
+      "Run xcode-select --install, finish the installation, and try again." >&2
+    exit 1
+  fi
+
+  printf '%s\n' "Checking build tools…"
+  (cd "$REPO_DIR" && npm run check-prereqs)
+
+  printf '%s\n' "Installing dependencies…"
+  (cd "$REPO_DIR" && npm ci)
+
+  printf '%s\n' "Building dooni.app…"
+  (cd "$REPO_DIR" && npx tauri build --bundles app)
+
+  if [ ! -d "$APP_SOURCE" ]; then
+    printf 'dooni: build finished without creating %s\n' "$APP_SOURCE" >&2
+    exit 1
+  fi
+
+  install_tmp=$(mktemp -d "${TMPDIR:-/tmp}/dooni-install.XXXXXX")
+  trap 'rm -rf "$install_tmp"' EXIT HUP INT TERM
+  ditto "$APP_SOURCE" "$install_tmp/$APP_NAME"
+
+  # Ad-hoc signing is free and is sufficient for a locally built application.
+  if command -v codesign >/dev/null 2>&1; then
+    codesign --force --deep --sign - "$install_tmp/$APP_NAME" >/dev/null
+  fi
+
+  mkdir -p "$HOME/Applications"
+  if [ -e "$APP_DEST" ]; then
+    mkdir -p "$HOME/.Trash"
+    backup="$HOME/.Trash/dooni.previous.$(date +%Y%m%d-%H%M%S).app"
+    mv "$APP_DEST" "$backup"
+    printf 'Previous app moved to %s\n' "$backup"
+  fi
+  mv "$install_tmp/$APP_NAME" "$APP_DEST"
+
+  mkdir -p "$CLI_DIR"
+  if [ -e "$CLI_LINK" ] || [ -L "$CLI_LINK" ]; then
+    rm -f "$CLI_LINK"
+  fi
+  ln -s "$REPO_DIR/dooni" "$CLI_LINK"
+
+  path_added=false
+  case ":${PATH:-}:" in
+    *":$CLI_DIR:"*) ;;
+    *)
+      if ! grep -F 'export PATH="$HOME/.local/bin:$PATH"' "$HOME/.zprofile" >/dev/null 2>&1; then
+        printf '\n%s\n%s\n' \
+          "# dooni CLI" \
+          'export PATH="$HOME/.local/bin:$PATH"' >> "$HOME/.zprofile"
+      fi
+      path_added=true
+      ;;
+  esac
+
+  if [ "$desktop_shortcut" = true ]; then
+    desktop_link="$HOME/Desktop/$APP_NAME"
+    if [ -L "$desktop_link" ]; then
+      rm -f "$desktop_link"
+    fi
+    if [ ! -e "$desktop_link" ]; then
+      ln -s "$APP_DEST" "$desktop_link"
+      printf 'Desktop shortcut created at %s\n' "$desktop_link"
+    else
+      printf 'Desktop shortcut skipped because %s already exists.\n' "$desktop_link"
+    fi
+  fi
+
+  printf '\nInstalled dooni at %s\n' "$APP_DEST"
+  if [ "$path_added" = true ]; then
+    printf '%s\n' 'Open a new terminal (or run `source ~/.zprofile`) before using the bare `dooni` command.'
+  fi
+  open "$APP_DEST"
+}
+
+open_app() {
+  if [ ! -d "$APP_DEST" ]; then
+    printf '%s\n' "dooni: not installed. Run ./dooni install from the cloned repo." >&2
+    exit 1
+  fi
+  open "$APP_DEST"
+}
+
+uninstall_app() {
+  if [ -e "$APP_DEST" ]; then
+    mkdir -p "$HOME/.Trash"
+    trashed="$HOME/.Trash/dooni.uninstalled.$(date +%Y%m%d-%H%M%S).app"
+    mv "$APP_DEST" "$trashed"
+    printf 'Moved the app to %s\n' "$trashed"
+  else
+    printf '%s\n' "dooni is not installed."
+  fi
+  if [ -L "$CLI_LINK" ]; then
+    rm -f "$CLI_LINK"
+  fi
+  if [ -L "$HOME/Desktop/$APP_NAME" ]; then
+    rm -f "$HOME/Desktop/$APP_NAME"
+  fi
+}
+
+command_name=${1:-help}
+if [ "$#" -gt 0 ]; then
+  shift
+fi
+
+case "$command_name" in
+  install) install_app "$@" ;;
+  open) open_app ;;
+  uninstall) uninstall_app ;;
+  help|-h|--help) usage ;;
+  *)
+    printf 'dooni: unknown command: %s\n' "$command_name" >&2
+    usage >&2
+    exit 2
+    ;;
+esac

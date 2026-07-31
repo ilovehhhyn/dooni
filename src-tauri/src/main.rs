@@ -1,33 +1,34 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-mod watcher;
-mod process_watch;
-mod summarizer;
+mod codex_runtime;
 mod config;
-mod sessions;
-mod session_store;
 mod focus;
+mod session_store;
+mod sessions;
+mod summarizer;
+mod watcher;
 
-use std::sync::{Arc, Mutex};
 use std::collections::{HashMap, HashSet};
+use std::sync::{Arc, Mutex};
+use tauri::Manager;
 
 #[derive(Default)]
 pub struct AppState {
     /// per-session parse state, keyed by session_id
     pub sessions: Mutex<HashMap<String, SessionState>>,
-    /// per-session topic memo, keyed by session_id
-    pub topics_by_session: Mutex<HashMap<String, Vec<String>>>,
-    /// session_ids that already have a spawned window
-    pub windows_spawned: Mutex<HashSet<String>>,
-    /// persistent per-session metadata for the house-manager window
+    /// Per-session verbatim user prompts, keyed by session id.
+    pub prompts_by_session: Mutex<HashMap<String, Vec<String>>>,
+    /// Persistent per-session metadata for the conversation list.
     pub session_meta: Mutex<HashMap<String, session_store::SessionMeta>>,
+    /// Chats admitted to the list by a user turn during this app launch.
+    pub surfaced_sessions: Mutex<HashSet<String>>,
     pub config: Mutex<config::Config>,
 }
 
 #[derive(Default, Clone)]
 pub struct SessionState {
     pub turns: Vec<Turn>,
-    pub user_count_since_summary: usize,
+    pub user_count_since_review: usize,
     pub last_processed_offset: u64,
 }
 
@@ -35,53 +36,119 @@ pub struct SessionState {
 pub struct Turn {
     pub role: String,
     pub text: String,
+    pub timestamp: Option<String>,
 }
 
 #[tauri::command]
-fn get_topics(state: tauri::State<Arc<AppState>>, session_id: String) -> Vec<String> {
-    state
-        .topics_by_session
-        .lock()
-        .unwrap()
-        .get(&session_id)
-        .cloned()
-        .unwrap_or_default()
+fn get_session(
+    state: tauri::State<Arc<AppState>>,
+    session_id: String,
+) -> Option<session_store::SessionMeta> {
+    state.session_meta.lock().unwrap().get(&session_id).cloned()
 }
 
 #[tauri::command]
-fn clear_topics(state: tauri::State<Arc<AppState>>, session_id: String) -> Vec<String> {
-    let mut m = state.topics_by_session.lock().unwrap();
-    m.insert(session_id.clone(), Vec::new());
-    Vec::new()
+fn save_future_prompts(
+    state: tauri::State<Arc<AppState>>,
+    session_id: String,
+    prompts: Vec<session_store::FuturePrompt>,
+) -> Result<(), String> {
+    let clean: Vec<_> = prompts
+        .into_iter()
+        .filter_map(|mut p| {
+            p.text = p.text.trim().to_string();
+            (!p.text.is_empty()).then_some(p)
+        })
+        .take(100)
+        .collect();
+    let mut map = state.session_meta.lock().unwrap();
+    let Some(meta) = map.get_mut(&session_id) else {
+        return Err("session not found".to_string());
+    };
+    meta.future_prompts = clean;
+    session_store::save(&map).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-fn get_config(state: tauri::State<Arc<AppState>>) -> config::Config {
-    state.config.lock().unwrap().clone()
+fn get_config(state: tauri::State<Arc<AppState>>) -> config::PublicConfig {
+    config::PublicConfig::from(&*state.config.lock().unwrap())
 }
 
 #[tauri::command]
 fn save_config(
     state: tauri::State<Arc<AppState>>,
     api_key: String,
+    runtime_provider: String,
     name: String,
     agents: Vec<String>,
-    mode: String,
-) -> Result<config::Config, String> {
+) -> Result<config::PublicConfig, String> {
+    if runtime_provider != "codex" && runtime_provider != "anthropic" {
+        return Err("unsupported runtime provider".to_string());
+    }
+    if runtime_provider == "anthropic" && api_key.trim().is_empty() {
+        return Err("Anthropic API key required".to_string());
+    }
     let mut cfg = state.config.lock().unwrap();
-    cfg.api_key = api_key;
+    cfg.api_key = api_key.trim().to_string();
+    cfg.runtime_provider = runtime_provider;
     cfg.name = name;
     cfg.agents = agents;
-    cfg.mode = mode;
     cfg.onboarded = true;
     config::save(&cfg).map_err(|e| e.to_string())?;
-    Ok(cfg.clone())
+    Ok(config::PublicConfig::from(&*cfg))
+}
+
+#[tauri::command]
+fn update_runtime_provider(
+    state: tauri::State<Arc<AppState>>,
+    runtime_provider: String,
+    api_key: Option<String>,
+) -> Result<config::PublicConfig, String> {
+    if runtime_provider != "codex" && runtime_provider != "anthropic" {
+        return Err("unsupported runtime provider".to_string());
+    }
+    let mut cfg = state.config.lock().unwrap();
+    if runtime_provider == "anthropic" {
+        if let Some(key) = api_key.map(|key| key.trim().to_string()) {
+            if !key.is_empty() {
+                cfg.api_key = key;
+            }
+        }
+        if config::effective_api_key(&cfg).is_empty() {
+            return Err("Anthropic API key required".to_string());
+        }
+    }
+    cfg.runtime_provider = runtime_provider;
+    config::save(&cfg).map_err(|error| error.to_string())?;
+    Ok(config::PublicConfig::from(&*cfg))
+}
+
+#[tauri::command]
+async fn get_codex_status() -> codex_runtime::CodexStatus {
+    codex_runtime::status().await
+}
+
+#[tauri::command]
+async fn start_codex_login() -> Result<(), String> {
+    codex_runtime::start_login()
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn open_codex_install() -> Result<(), String> {
+    codex_runtime::open_install_page().map_err(|error| error.to_string())
 }
 
 #[tauri::command]
 fn get_sessions(state: tauri::State<Arc<AppState>>) -> Vec<session_store::SessionMeta> {
+    let surfaced = state.surfaced_sessions.lock().unwrap().clone();
     let m = state.session_meta.lock().unwrap();
-    let mut v: Vec<_> = m.values().cloned().collect();
+    let mut v: Vec<_> = m
+        .values()
+        .filter(|session| surfaced.contains(&session.session_id))
+        .cloned()
+        .collect();
     v.sort_by(|a, b| b.last_active.cmp(&a.last_active));
     v
 }
@@ -91,84 +158,171 @@ fn rename_session(
     state: tauri::State<Arc<AppState>>,
     session_id: String,
     title: String,
-) -> Result<(), String> {
+) -> Result<String, String> {
     let mut m = state.session_meta.lock().unwrap();
-    if let Some(meta) = m.get_mut(&session_id) {
-        meta.title = title;
-        session_store::save(&*m).map_err(|e| e.to_string())?;
-    }
-    Ok(())
+    let updated_title = {
+        let meta = m
+            .get_mut(&session_id)
+            .ok_or_else(|| "session not found".to_string())?;
+        meta.title = sessions::limit_title(&title);
+        if meta.title.is_empty() {
+            meta.title = "Untitled chat".to_string();
+        }
+        meta.title_locked = true;
+        meta.title.clone()
+    };
+    session_store::save(&*m).map_err(|e| e.to_string())?;
+    Ok(updated_title)
 }
 
 #[tauri::command]
-fn focus_session(
+fn focus_session(state: tauri::State<Arc<AppState>>, session_id: String) -> Result<bool, String> {
+    let (project_dir, surface) = {
+        let m = state.session_meta.lock().unwrap();
+        let session = m.get(&session_id);
+        (
+            session.and_then(|s| s.project_dir.clone()),
+            session
+                .map(|s| s.surface.clone())
+                .unwrap_or_else(|| "terminal".to_string()),
+        )
+    };
+    focus::focus_chat_for(&surface, project_dir.as_deref()).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn launch_session_window(
     app: tauri::AppHandle,
     state: tauri::State<Arc<AppState>>,
     session_id: String,
-) -> Result<bool, String> {
-    let project_dir = {
-        let m = state.session_meta.lock().unwrap();
-        m.get(&session_id).and_then(|s| s.project_dir.clone())
-    };
-    // Also raise the corresponding memo window if it exists.
+) -> Result<(), String> {
+    open_session_window(&app, state.inner().as_ref(), &session_id)
+}
+
+fn open_session_window(
+    app: &tauri::AppHandle,
+    state: &AppState,
+    session_id: &str,
+) -> Result<(), String> {
+    use tauri::{WebviewUrl, WebviewWindowBuilder};
     let label = sessions::window_label_for(&session_id);
-    if let Some(win) = tauri::Manager::get_webview_window(&app, &label) {
+    if let Some(win) = app.get_webview_window(&label) {
         let _ = win.show();
         let _ = win.unminimize();
         let _ = win.set_focus();
+        return Ok(());
     }
-    focus::focus_terminal_for(project_dir.as_deref()).map_err(|e| e.to_string())
+    let title = state
+        .session_meta
+        .lock()
+        .unwrap()
+        .get(session_id)
+        .map(|s| s.title.clone())
+        .unwrap_or_else(|| session_id.chars().take(12).collect());
+    let mut builder = WebviewWindowBuilder::new(app, &label, WebviewUrl::App("index.html".into()))
+        .title(title)
+        .inner_size(420.0, 560.0)
+        .min_inner_size(340.0, 420.0)
+        .always_on_top(false)
+        .resizable(true)
+        .decorations(true);
+    if let Some(manager_window) = app.get_webview_window("main") {
+        if let Ok(position) = manager_window.outer_position() {
+            let scale = manager_window.scale_factor().unwrap_or(1.0);
+            builder = builder.position(
+                position.x as f64 / scale + 28.0,
+                position.y as f64 / scale + 28.0,
+            );
+        }
+    }
+    builder.build().map(|_| ()).map_err(|e| e.to_string())
 }
 
-#[tauri::command]
-fn set_mode(state: tauri::State<Arc<AppState>>, mode: String) -> Result<config::Config, String> {
-    let mut cfg = state.config.lock().unwrap();
-    cfg.mode = mode;
-    config::save(&cfg).map_err(|e| e.to_string())?;
-    Ok(cfg.clone())
+fn show_shortcut_session(app: &tauri::AppHandle) {
+    let Some(surface) = focus::frontmost_chat_surface() else {
+        return;
+    };
+    let state = app.state::<Arc<AppState>>();
+    let surfaced = state.surfaced_sessions.lock().unwrap().clone();
+    let session_id = state
+        .session_meta
+        .lock()
+        .unwrap()
+        .values()
+        .filter(|session| surfaced.contains(&session.session_id) && session.surface == surface)
+        .max_by_key(|session| session.last_active)
+        .map(|session| session.session_id.clone());
+
+    if let Some(session_id) = session_id {
+        if let Err(error) = open_session_window(app, state.inner().as_ref(), &session_id) {
+            eprintln!("[dooni] shortcut window error: {error}");
+        }
+    }
 }
 
 fn main() {
     let cfg = config::load();
-    let meta = session_store::load();
+    let mut meta = session_store::load();
+    for session in meta.values_mut() {
+        let project = sessions::project_label(session.project_dir.as_deref());
+        session.project_name = project.clone();
+        session.title = sessions::limit_title(&sessions::title_without_project_prefix(
+            &session.title,
+            project.as_deref(),
+        ));
+        if session.title.is_empty() {
+            session.title = "Untitled chat".to_string();
+        }
+    }
+    let prompts_by_session = meta
+        .iter()
+        .map(|(id, session)| (id.clone(), session.asked_prompts.clone()))
+        .collect();
     let state = Arc::new(AppState {
         sessions: Mutex::new(HashMap::new()),
-        topics_by_session: Mutex::new(HashMap::new()),
-        windows_spawned: Mutex::new(HashSet::new()),
+        prompts_by_session: Mutex::new(prompts_by_session),
         session_meta: Mutex::new(meta),
+        surfaced_sessions: Mutex::new(HashSet::new()),
         config: Mutex::new(cfg),
     });
 
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
+        .plugin(
+            tauri_plugin_global_shortcut::Builder::new()
+                .with_handler(|app, shortcut, event| {
+                    use tauri_plugin_global_shortcut::{Code, Modifiers, ShortcutState};
+                    if event.state == ShortcutState::Pressed
+                        && shortcut.matches(Modifiers::SUPER | Modifiers::SHIFT, Code::KeyD)
+                    {
+                        show_shortcut_session(app);
+                    }
+                })
+                .build(),
+        )
         .manage(state.clone())
         .invoke_handler(tauri::generate_handler![
-            get_topics, clear_topics, get_config, save_config, set_mode,
-            get_sessions, rename_session, focus_session
+            get_config,
+            save_config,
+            update_runtime_provider,
+            get_codex_status,
+            start_codex_login,
+            open_codex_install,
+            get_sessions,
+            get_session,
+            rename_session,
+            focus_session,
+            launch_session_window,
+            save_future_prompts
         ])
         .setup(move |app| {
+            use tauri_plugin_global_shortcut::GlobalShortcutExt;
+            if let Err(error) = app.global_shortcut().register("CmdOrCtrl+Shift+D") {
+                eprintln!("[dooni] could not register Cmd+Shift+D: {error}");
+            }
+
             let handle = app.handle().clone();
             let s = state.clone();
-
-            // House-manager window: persistent overview of all chat sessions.
-            {
-                use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
-                if handle.get_webview_window("house-manager").is_none() {
-                    let builder = WebviewWindowBuilder::new(
-                        &handle,
-                        "house-manager",
-                        WebviewUrl::App("manager.html".into()),
-                    )
-                    .title("dooni · house manager")
-                    .inner_size(420.0, 560.0)
-                    .always_on_top(true)
-                    .resizable(true)
-                    .decorations(true);
-                    if let Err(e) = builder.build() {
-                        eprintln!("[dooni] failed to spawn house-manager: {e:?}");
-                    }
-                }
-            }
 
             let hw = handle.clone();
             let sw = s.clone();
@@ -176,11 +330,6 @@ fn main() {
                 if let Err(e) = watcher::run(hw, sw).await {
                     eprintln!("[dooni] watcher error: {e:?}");
                 }
-            });
-
-            let hp = handle.clone();
-            tauri::async_runtime::spawn(async move {
-                process_watch::run(hp).await;
             });
 
             Ok(())

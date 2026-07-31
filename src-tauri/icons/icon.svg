@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <rect x="4" y="4" width="56" height="56" rx="14" fill="#fff"/>
+  <g transform="translate(11 11)" shape-rendering="crispEdges">
+    <path fill="#000" d="
+      M0 0h6v6h-6z M12 0h18v6h-18z
+      M6 6h30v6h-30z
+      M0 12h12v6h-12z M18 12h6v6h-6z M30 12h12v6h-12z
+      M0 18h42v12h-42z
+      M6 30h30v6h-30z
+      M12 36h18v6h-18z
+    "/>
+    <path fill="#fff" d="M12 12h6v6h-6z M24 12h6v6h-6z"/>
+  </g>
+</svg>

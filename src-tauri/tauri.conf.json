@@ -11,11 +11,13 @@
     "windows": [
       {
         "label": "main",
-        "title": "dooni",
-        "width": 340,
-        "height": 500,
+        "title": "Chats",
+        "width": 420,
+        "height": 560,
+        "minWidth": 340,
+        "minHeight": 420,
         "resizable": true,
-        "alwaysOnTop": true,
+        "alwaysOnTop": false,
         "decorations": true,
         "transparent": false,
         "skipTaskbar": false,
@@ -29,6 +31,12 @@
   "bundle": {
     "active": true,
     "targets": "all",
-    "icon": ["icons/icon.png"]
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ]
   }
 }

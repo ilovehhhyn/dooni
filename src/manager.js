@@ -1,197 +1,302 @@
-// House-manager: SVG castle where each window rect is a "slot".
-// - orange = running   - light gray = idle known   - dark = empty
-// Toggle to list view for rename + explicit focus.
-
 const els = {
-  toggle:  document.getElementById("mgr-toggle"),
-  castleSvg: document.getElementById("castle-svg"),
-  empty:   document.getElementById("mgr-empty"),
-  viewCastle: document.getElementById("mgr-castle"),
-  viewList:   document.getElementById("mgr-list"),
-  listUl:  document.getElementById("mgr-list-ul"),
-  tooltip: document.getElementById("mgr-tooltip"),
-  status:  document.getElementById("mgr-status"),
+  list: document.getElementById("mgr-list-ul"),
+  count: document.getElementById("session-count"),
+  status: document.getElementById("mgr-status"),
+  settings: document.getElementById("settings-panel"),
+  settingsButton: document.getElementById("settings-btn"),
+  settingsClose: document.getElementById("settings-close"),
+  codexDetail: document.getElementById("codex-runtime"),
+  codexState: document.getElementById("codex-runtime-state"),
+  codexAction: document.getElementById("codex-runtime-action"),
+  anthropicDetail: document.getElementById("anthropic-runtime"),
+  anthropicKey: document.getElementById("settings-anthropic-key"),
+  runtimeSave: document.getElementById("runtime-save"),
 };
 
-const slots = Array.from(els.castleSvg.querySelectorAll("[data-slot]"));
-const CASTLE_MAX = slots.length;
+const ICONS = {
+  edit: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M12.6 2.6a2 2 0 0 1 2.8 2.8L6 14.8l-4 .9.9-4L12.6 2.6zM10.8 4.4l2.8 2.8"></path></svg>',
+  open: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5 11L11 5M7 5h4v4"></path></svg>',
+};
 
 let sessions = [];
-let view = "castle";
+let config = null;
+let selectedRuntime = "codex";
+let codexStatus = { installed: false, authenticated: false };
 
-function setStatus(s) { els.status.textContent = s; }
-
-function paintSlot(slot, s) {
-  slot.classList.remove("idle", "running", "session");
-  if (s) {
-    slot.classList.add("session", s.running ? "running" : "idle");
-    slot.__session = s;
-  } else {
-    slot.__session = null;
-  }
-}
-
-function renderCastle() {
-  const visible = sessions.slice(0, CASTLE_MAX);
-  slots.forEach((slot, i) => paintSlot(slot, visible[i]));
-  els.empty.classList.toggle("hidden", sessions.length !== 0);
+function setStatus(message) {
+  els.status.textContent = message || "";
+  els.status.classList.toggle("visible", !!message);
 }
 
 function renderList() {
-  els.listUl.innerHTML = "";
-  if (sessions.length === 0) {
-    const li = document.createElement("li");
-    li.textContent = "no chat sessions yet";
-    li.style.opacity = "0.5";
-    els.listUl.appendChild(li);
+  els.list.innerHTML = "";
+  els.count.textContent = `${sessions.length} chat${sessions.length === 1 ? "" : "s"}`;
+  if (!sessions.length) {
+    const empty = document.createElement("li");
+    empty.className = "list-empty";
+    empty.textContent = "no chats";
+    els.list.appendChild(empty);
     return;
   }
-  for (const s of sessions) {
-    const li = document.createElement("li");
+
+  sessions.forEach((session) => {
+    const item = document.createElement("li");
+    item.className = "session-row";
 
     const dot = document.createElement("span");
-    dot.className = "dot " + (s.running ? "running" : "idle");
-    li.appendChild(dot);
+    dot.className = `session-dot ${session.running ? "running" : "idle"}`;
 
-    const agent = document.createElement("span");
-    agent.className = "list-agent";
-    agent.textContent = s.agent;
-    li.appendChild(agent);
+    const identity = document.createElement("div");
+    identity.className = "session-row-identity";
 
     const title = document.createElement("span");
     title.className = "list-title";
-    title.contentEditable = "true";
-    title.spellcheck = false;
-    title.textContent = s.title;
-    title.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") { e.preventDefault(); title.blur(); }
+    title.textContent = session.title;
+    title.tabIndex = 0;
+    title.setAttribute("role", "button");
+    title.addEventListener("click", () => {
+      if (!title.isContentEditable) focusSession(session.session_id);
     });
-    title.addEventListener("blur", async () => {
-      const nv = title.textContent.trim();
-      if (!nv || nv === s.title) { title.textContent = s.title; return; }
-      try {
-        await window.__TAURI__.core.invoke("rename_session", {
-          sessionId: s.session_id,
-          title: nv,
-        });
-        s.title = nv;
-      } catch (e) { setStatus("rename err: " + e); }
+    title.addEventListener("keydown", (event) => {
+      if (!title.isContentEditable && (event.key === "Enter" || event.key === " ")) {
+        event.preventDefault();
+        focusSession(session.session_id);
+      }
     });
-    li.appendChild(title);
 
-    const btn = document.createElement("button");
-    btn.className = "list-focus";
-    btn.textContent = "focus";
-    btn.addEventListener("click", () => focusSession(s.session_id));
-    li.appendChild(btn);
+    const meta = document.createElement("span");
+    meta.className = "list-meta";
+    const agent = session.agent === "codex"
+      ? "Codex"
+      : session.agent === "claude"
+        ? "Claude"
+        : "Unknown";
+    meta.textContent = [session.project_name, agent].filter(Boolean).join(" | ");
+    identity.append(title, meta);
 
-    els.listUl.appendChild(li);
+    const rename = iconButton("edit", `Rename ${session.title}`);
+    rename.addEventListener("click", () => beginRename(title, session));
+
+    const launch = iconButton("open", `Open notes for ${session.title}`);
+    launch.classList.add("bare-arrow");
+    launch.addEventListener("click", () => launchSession(session.session_id));
+
+    item.append(dot, identity, rename, launch);
+    els.list.appendChild(item);
+  });
+}
+
+function iconButton(icon, label) {
+  const button = document.createElement("button");
+  button.className = "icon-button row-action";
+  button.type = "button";
+  button.setAttribute("aria-label", label);
+  button.innerHTML = ICONS[icon];
+  return button;
+}
+
+async function focusSession(sessionId) {
+  try {
+    const matched = await window.__TAURI__.core.invoke("focus_session", { sessionId });
+    if (!matched) setStatus("chat is unavailable");
+  } catch (error) {
+    setStatus(`focus error: ${error}`);
   }
 }
 
-function renderAll() {
-  if (view === "castle") renderCastle(); else renderList();
-}
-
-async function focusSession(id) {
+async function launchSession(sessionId) {
   try {
-    const matched = await window.__TAURI__.core.invoke("focus_session", { sessionId: id });
-    setStatus(matched ? "focused terminal tab" : "activated terminal app (no exact tab match)");
-  } catch (e) { setStatus("focus err: " + e); }
+    await window.__TAURI__.core.invoke("launch_session_window", { sessionId });
+  } catch (error) {
+    setStatus(`open error: ${error}`);
+  }
 }
 
-function showTip(e, s) {
-  const last = s.last_active ? new Date(s.last_active * 1000).toLocaleTimeString() : "—";
-  els.tooltip.innerHTML =
-    `<div><b>${escapeHtml(s.title)}</b></div>` +
-    `<div>${escapeHtml(s.agent)} · ${s.running ? "running" : "idle"}</div>` +
-    (s.project_dir ? `<div>${escapeHtml(s.project_dir)}</div>` : "") +
-    `<div>last: ${last}</div>`;
-  els.tooltip.classList.remove("hidden");
-  moveTip(e);
-}
-function moveTip(e) {
-  els.tooltip.style.left = (e.clientX + 12) + "px";
-  els.tooltip.style.top  = (e.clientY + 12) + "px";
-}
-function hideTip() { els.tooltip.classList.add("hidden"); }
+function beginRename(title, session) {
+  if (title.isContentEditable) return;
+  title.removeAttribute("role");
+  title.removeAttribute("tabindex");
+  title.contentEditable = "true";
+  title.classList.add("renaming");
+  title.focus();
+  document.execCommand("selectAll", false, null);
 
-function escapeHtml(s) {
-  return String(s).replace(/[&<>"']/g, (c) => (
-    {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]
-  ));
+  const handleKey = (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      title.blur();
+    } else if (event.key === "Escape") {
+      title.textContent = session.title;
+      title.blur();
+    }
+  };
+  const finish = async () => {
+    title.removeEventListener("blur", finish);
+    title.removeEventListener("keydown", handleKey);
+    const next = title.textContent.trim();
+    title.contentEditable = "false";
+    title.classList.remove("renaming");
+    title.setAttribute("role", "button");
+    title.tabIndex = 0;
+    if (!next || next === session.title) {
+      title.textContent = session.title;
+      return;
+    }
+    try {
+      const updatedTitle = await window.__TAURI__.core.invoke("rename_session", {
+        sessionId: session.session_id,
+        title: next,
+      });
+      session.title = updatedTitle;
+      title.textContent = updatedTitle;
+    } catch (error) {
+      title.textContent = session.title;
+      setStatus(`rename error: ${error}`);
+    }
+  };
+  title.addEventListener("keydown", handleKey);
+  title.addEventListener("blur", finish);
 }
 
-async function refresh() {
+async function refreshSessions() {
   try {
     sessions = await window.__TAURI__.core.invoke("get_sessions");
-    renderAll();
-    setStatus(`${sessions.length} session${sessions.length===1?"":"s"} · ${new Date().toLocaleTimeString()}`);
-  } catch (e) { setStatus("load err: " + e); }
+    renderList();
+  } catch (error) {
+    setStatus(`load error: ${error}`);
+  }
 }
 
-function setupLockButton() {
-  const btn = document.getElementById("lock-btn");
-  if (!btn) return;
-  let pinned = true;
-  const paint = () => { btn.textContent = pinned ? "🔒" : "🔓"; };
-  paint();
-  btn.addEventListener("click", async () => {
+function setupPinButton() {
+  const button = document.getElementById("lock-btn");
+  let pinned = false;
+  button.addEventListener("click", async () => {
     pinned = !pinned;
-    paint();
+    button.setAttribute("aria-pressed", String(pinned));
+    button.title = pinned ? "Unpin window" : "Pin window";
     try {
-      const w = window.__TAURI__ && window.__TAURI__.window;
-      const getter = w && (w.getCurrentWindow || w.getCurrent);
-      const cur = getter ? getter.call(w) : null;
-      if (cur && cur.setAlwaysOnTop) await cur.setAlwaysOnTop(pinned);
-    } catch (e) { console.error("lock err", e); }
+      const api = window.__TAURI__.window;
+      const getter = api.getCurrentWindow || api.getCurrent;
+      const current = getter ? getter.call(api) : null;
+      if (current?.setAlwaysOnTop) await current.setAlwaysOnTop(pinned);
+    } catch (error) {
+      setStatus(`pin error: ${error}`);
+    }
   });
+}
+
+function paintRuntime() {
+  document.querySelectorAll(".runtime-option").forEach((option) => {
+    option.classList.toggle("selected", option.dataset.runtime === selectedRuntime);
+  });
+  els.codexDetail.classList.toggle("hidden", selectedRuntime !== "codex");
+  els.anthropicDetail.classList.toggle("hidden", selectedRuntime !== "anthropic");
+}
+
+function paintCodexStatus() {
+  if (!codexStatus.installed) {
+    els.codexState.textContent = "not installed";
+    els.codexAction.textContent = "install";
+  } else if (!codexStatus.authenticated) {
+    els.codexState.textContent = "not connected";
+    els.codexAction.textContent = "sign in";
+  } else {
+    els.codexState.textContent = "connected";
+    els.codexAction.textContent = "";
+  }
+  els.codexAction.classList.toggle("hidden", codexStatus.authenticated);
+}
+
+async function refreshSettings() {
+  try {
+    const [nextConfig, nextCodexStatus] = await Promise.all([
+      window.__TAURI__.core.invoke("get_config"),
+      window.__TAURI__.core.invoke("get_codex_status"),
+    ]);
+    config = nextConfig;
+    codexStatus = nextCodexStatus;
+    selectedRuntime = config.runtime_provider || "codex";
+    paintRuntime();
+    paintCodexStatus();
+  } catch (error) {
+    setStatus(`settings error: ${error}`);
+  }
+}
+
+async function handleCodexAction() {
+  try {
+    if (!codexStatus.installed) {
+      await window.__TAURI__.core.invoke("open_codex_install");
+    } else if (!codexStatus.authenticated) {
+      els.codexAction.textContent = "opening…";
+      await window.__TAURI__.core.invoke("start_codex_login");
+      setTimeout(refreshSettings, 1500);
+    }
+  } catch (error) {
+    setStatus(`Codex error: ${error}`);
+  }
+}
+
+async function saveRuntime() {
+  try {
+    if (selectedRuntime === "codex") {
+      codexStatus = await window.__TAURI__.core.invoke("get_codex_status");
+      paintCodexStatus();
+      if (!codexStatus.authenticated) {
+        setStatus("connect Codex first");
+        return;
+      }
+    }
+    const apiKey = els.anthropicKey.value.trim();
+    config = await window.__TAURI__.core.invoke("update_runtime_provider", {
+      runtimeProvider: selectedRuntime,
+      apiKey: apiKey || null,
+    });
+    els.anthropicKey.value = "";
+    els.settings.classList.add("hidden");
+  } catch (error) {
+    setStatus(`runtime error: ${error}`);
+  }
+}
+
+function setupSettings() {
+  paintRuntime();
+  els.settingsButton.addEventListener("click", async () => {
+    els.settings.classList.remove("hidden");
+    await refreshSettings();
+  });
+  els.settingsClose.addEventListener("click", () => els.settings.classList.add("hidden"));
+  document.querySelectorAll(".runtime-option").forEach((option) => {
+    option.addEventListener("click", () => {
+      selectedRuntime = option.dataset.runtime;
+      paintRuntime();
+    });
+  });
+  els.codexAction.addEventListener("click", handleCodexAction);
+  els.runtimeSave.addEventListener("click", saveRuntime);
 }
 
 async function init() {
-  if (!window.__TAURI__) { setStatus("NO __TAURI__"); return; }
-  setupLockButton();
-
-  // Delegated slot handlers so we don't re-bind on every render.
-  els.castleSvg.addEventListener("mousemove", (e) => {
-    const target = e.target;
-    if (target && target.__session) moveTip(e);
+  setupSettings();
+  if (!window.__TAURI__) {
+    renderList();
+    return;
+  }
+  setupPinButton();
+  await refreshSessions();
+  await window.__TAURI__.event.listen("sessions-updated", (event) => {
+    const payload = event.payload || {};
+    if (Array.isArray(payload.sessions)) {
+      sessions = payload.sessions;
+      renderList();
+    }
   });
-  els.castleSvg.addEventListener("mouseover", (e) => {
-    const target = e.target;
-    if (target && target.__session) showTip(e, target.__session);
-  });
-  els.castleSvg.addEventListener("mouseout", (e) => {
-    const target = e.target;
-    if (target && target.__session) hideTip();
-  });
-  els.castleSvg.addEventListener("click", (e) => {
-    const target = e.target;
-    if (target && target.__session) focusSession(target.__session.session_id);
-  });
-
-  els.toggle.addEventListener("click", () => {
-    view = view === "castle" ? "list" : "castle";
-    els.toggle.textContent = view === "castle" ? "list" : "castle";
-    els.viewCastle.classList.toggle("hidden", view !== "castle");
-    els.viewList.classList.toggle("hidden", view !== "list");
-    renderAll();
-  });
-
-  await refresh();
-
-  try {
-    await window.__TAURI__.event.listen("sessions-updated", (evt) => {
-      const p = evt.payload || {};
-      if (Array.isArray(p.sessions)) {
-        sessions = p.sessions;
-        renderAll();
-        setStatus(`${sessions.length} session${sessions.length===1?"":"s"} · ${new Date().toLocaleTimeString()}`);
-      }
-    });
-  } catch (e) { setStatus("listen err: " + e); }
-
-  setInterval(refresh, 10000);
+  setInterval(refreshSessions, 10000);
+  setInterval(() => {
+    if (!els.settings.classList.contains("hidden") && !codexStatus.authenticated) {
+      refreshSettings();
+    }
+  }, 3000);
 }
 
-init().catch(e => setStatus("init err: " + e));
+init().catch((error) => setStatus(`init error: ${error}`));
