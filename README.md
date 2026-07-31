@@ -9,7 +9,7 @@ dooni keeps a persistent, glanceable running list so you never lose the thread.
 ## What it does
 
 - After signup, dooni shows one chat list.
-- Each launch begins with an empty chat list. A Codex, Claude, or terminal chat is admitted only after its first new substantive user turn after dooni launches.
+- Each launch begins with an empty chat list. A Codex, Claude, or terminal chat is admitted only after its first new user turn after dooni launches.
 - The list retains at most the 20 newest admitted chats. Older entries and their windows are removed.
 - On first admission, the selected runtime is asked what the chat is about, reads bounded chat content, and generates a descriptive title. dooni prefixes a repository or folder name as `project · title` when available. Titles are reconsidered after every five substantive user prompts unless you rename a chat manually, which locks its title.
 - Notes windows open only from the open icon, and they are not pinned by default.
