@@ -11,6 +11,19 @@ pub struct FuturePrompt {
     pub done: bool,
 }
 
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct AskedPromptLocator {
+    /// Source-provider turn/message id when the history format exposes one.
+    #[serde(default)]
+    pub turn_id: Option<String>,
+    /// Byte position of the source JSONL record.
+    #[serde(default)]
+    pub history_position: u64,
+    /// One-based occurrence of identical prompt text in this conversation.
+    #[serde(default)]
+    pub occurrence: usize,
+}
+
 /// Persistent metadata about a chat session, surfaced by the conversation list.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionMeta {
@@ -37,6 +50,9 @@ pub struct SessionMeta {
     pub project_name: Option<String>,
     /// Absolute JSONL path.
     pub jsonl_path: String,
+    /// Provider conversation/thread id used by supported desktop deep links.
+    #[serde(default)]
+    pub source_conversation_id: Option<String>,
     /// Where the chat originated: "terminal", "codex-app", or "claude-app".
     #[serde(default = "default_surface")]
     pub surface: String,
@@ -52,6 +68,9 @@ pub struct SessionMeta {
     /// Source timestamps aligned by index with `asked_prompts`.
     #[serde(default)]
     pub asked_prompt_timestamps: Vec<Option<String>>,
+    /// Source records aligned by index with `asked_prompts`.
+    #[serde(default)]
+    pub asked_prompt_locators: Vec<AskedPromptLocator>,
     /// User-authored prompts to try later.
     #[serde(default)]
     pub future_prompts: Vec<FuturePrompt>,

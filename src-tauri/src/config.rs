@@ -19,6 +19,7 @@ pub struct Config {
 #[derive(Debug, Clone, Serialize)]
 pub struct PublicConfig {
     pub runtime_provider: String,
+    pub anthropic_connected: bool,
     pub name: String,
     pub agents: Vec<String>,
     pub onboarded: bool,
@@ -28,6 +29,7 @@ impl From<&Config> for PublicConfig {
     fn from(config: &Config) -> Self {
         Self {
             runtime_provider: config.runtime_provider.clone(),
+            anthropic_connected: !effective_api_key(config).is_empty(),
             name: config.name.clone(),
             agents: config.agents.clone(),
             onboarded: config.onboarded,
@@ -131,5 +133,6 @@ mod tests {
         };
         let value = serde_json::to_value(PublicConfig::from(&config)).unwrap();
         assert!(value.get("api_key").is_none());
+        assert_eq!(value.get("anthropic_connected").unwrap(), true);
     }
 }

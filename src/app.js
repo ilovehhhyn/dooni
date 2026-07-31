@@ -123,7 +123,34 @@ function renderAskedPrompts() {
     }
     const item = document.createElement("li");
     item.className = "asked-prompt";
-    item.textContent = prompt;
+    const text = document.createElement("span");
+    text.className = "asked-prompt-text";
+    text.textContent = prompt;
+
+    const locate = document.createElement("button");
+    locate.className = "locate-prompt";
+    locate.type = "button";
+    locate.title = "Find in original chat";
+    locate.setAttribute("aria-label", "Find this prompt in the original chat");
+    locate.innerHTML = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5 11 11 5M6 5h5v5"></path></svg>';
+    locate.addEventListener("click", async () => {
+      locate.disabled = true;
+      setStatus("opening chat…");
+      try {
+        const result = await window.__TAURI__.core.invoke("locate_asked_prompt", {
+          sessionId,
+          promptIndex: index,
+        });
+        setStatus(result.message || "chat opened");
+        window.setTimeout(() => setStatus(""), 4200);
+      } catch (error) {
+        setStatus(`could not locate prompt: ${error}`);
+      } finally {
+        locate.disabled = false;
+      }
+    });
+
+    item.append(text, locate);
     els.asked.appendChild(item);
   });
   els.askedCount.textContent = askedPrompts.length;
@@ -274,16 +301,25 @@ async function initMain(invoke, listen) {
   const codexDot = document.getElementById("ob-codex-dot");
   const anthropicToggle = document.getElementById("ob-use-anthropic");
   const anthropicPanel = document.getElementById("ob-anthropic-panel");
+  const runtimeStep = document.getElementById("ob-runtime-step");
+  const claudeStep = document.getElementById("ob-claude-step");
+  const claudeAction = document.getElementById("ob-claude-action");
+  const claudeSkip = document.getElementById("ob-claude-skip");
+  const claudeStatusText = document.getElementById("ob-claude-status");
+  const claudeDot = document.getElementById("ob-claude-dot");
   const error = document.getElementById("ob-error");
   let codexStatus = { installed: false, authenticated: false };
+  let claudeAccess = { installed: false, authorized: false };
+  let pendingRuntimeProvider = "codex";
+  let pendingApiKey = "";
 
-  async function finishOnboarding(runtimeProvider, apiKey = "") {
+  async function finishOnboarding() {
     const name = document.getElementById("ob-name").value.trim();
     if (!name) return void (error.textContent = "name required");
     try {
       await invoke("save_config", {
-        apiKey,
-        runtimeProvider,
+        apiKey: pendingApiKey,
+        runtimeProvider: pendingRuntimeProvider,
         name,
         agents: ["claude", "codex"],
       });
@@ -294,6 +330,17 @@ async function initMain(invoke, listen) {
     } catch (saveError) {
       error.textContent = `save error: ${saveError}`;
     }
+  }
+
+  async function showClaudeStep(runtimeProvider, apiKey = "") {
+    const name = document.getElementById("ob-name").value.trim();
+    if (!name) return void (error.textContent = "name required");
+    pendingRuntimeProvider = runtimeProvider;
+    pendingApiKey = apiKey;
+    error.textContent = "";
+    runtimeStep.classList.add("hidden");
+    claudeStep.classList.remove("hidden");
+    await refreshClaudeAccess();
   }
 
   function paintCodexStatus() {
@@ -324,6 +371,34 @@ async function initMain(invoke, listen) {
     }
   }
 
+  function paintClaudeAccess() {
+    claudeDot.className = "auth-dot";
+    claudeAction.disabled = false;
+    if (!claudeAccess.installed) {
+      claudeDot.classList.add("missing");
+      claudeStatusText.textContent = "not installed";
+      claudeAction.textContent = "install Claude Desktop";
+    } else if (!claudeAccess.authorized) {
+      claudeStatusText.textContent = "not connected";
+      claudeAction.textContent = "allow Claude Desktop";
+    } else {
+      claudeDot.classList.add("connected");
+      claudeStatusText.textContent = "connected";
+      claudeAction.textContent = "continue";
+    }
+  }
+
+  async function refreshClaudeAccess() {
+    try {
+      claudeAccess = await invoke("get_claude_desktop_access_status");
+      paintClaudeAccess();
+    } catch (statusError) {
+      claudeAction.disabled = false;
+      claudeAction.textContent = "check Claude again";
+      error.textContent = `Claude check failed: ${statusError}`;
+    }
+  }
+
   codexAction.addEventListener("click", async () => {
     error.textContent = "";
     try {
@@ -338,7 +413,7 @@ async function initMain(invoke, listen) {
         setTimeout(refreshCodexStatus, 1500);
         return;
       }
-      await finishOnboarding("codex");
+      await showClaudeStep("codex");
     } catch (actionError) {
       error.textContent = `${actionError}`;
       paintCodexStatus();
@@ -351,13 +426,33 @@ async function initMain(invoke, listen) {
   document.getElementById("ob-anthropic-save").addEventListener("click", async () => {
     const apiKey = document.getElementById("ob-anthropic-key").value.trim();
     if (!apiKey) return void (error.textContent = "API key required");
-    await finishOnboarding("anthropic", apiKey);
+    await showClaudeStep("anthropic", apiKey);
   });
+  claudeAction.addEventListener("click", async () => {
+    error.textContent = "";
+    try {
+      if (claudeAccess.authorized) {
+        await finishOnboarding();
+        return;
+      }
+      await invoke("open_claude_desktop_access");
+      window.setTimeout(refreshClaudeAccess, 1000);
+    } catch (actionError) {
+      error.textContent = `${actionError}`;
+      paintClaudeAccess();
+    }
+  });
+  claudeSkip.addEventListener("click", finishOnboarding);
 
   await refreshCodexStatus();
   setInterval(() => {
     if (!onboarded && !codexStatus.authenticated) refreshCodexStatus();
   }, 3000);
+  setInterval(() => {
+    if (!onboarded && !claudeStep.classList.contains("hidden") && !claudeAccess.authorized) {
+      refreshClaudeAccess();
+    }
+  }, 1500);
 
   chooseScreen();
 }

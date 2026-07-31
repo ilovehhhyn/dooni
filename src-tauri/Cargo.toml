@@ -19,6 +19,8 @@ dirs = "5"
 sysinfo = "0.31"
 walkdir = "2"
 anyhow = "1"
+chrono = "0.4"
+core-foundation = "0.10"
 
 [features]
 default = ["custom-protocol"]

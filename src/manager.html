@@ -2,7 +2,7 @@
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>Chats</title>
+  <title>dooni</title>
   <link rel="stylesheet" href="styles.css" />
   <link rel="stylesheet" href="manager.css" />
 </head>
@@ -21,7 +21,6 @@
         </svg>
       </button>
     </div>
-    <span id="session-count" class="session-count"></span>
   </header>
 
   <main class="mgr-main">
@@ -38,20 +37,23 @@
       </button>
     </header>
 
-    <div class="settings-group">
-      <h2>runtime</h2>
-      <div class="runtime-picker" role="group" aria-label="Title runtime">
-        <button class="runtime-option" data-runtime="codex" type="button">Codex</button>
-        <button class="runtime-option" data-runtime="anthropic" type="button">Anthropic</button>
+    <div class="settings-group runtime-group">
+      <div class="settings-group-title">
+        <h2 id="runtime-heading">runtime disconnected</h2>
+        <div class="runtime-picker" role="group" aria-label="Title runtime">
+          <button class="runtime-option" data-runtime="codex" type="button">Codex</button>
+          <button class="runtime-option" data-runtime="anthropic" type="button">Anthropic</button>
+        </div>
       </div>
       <div id="codex-runtime" class="runtime-detail">
-        <span id="codex-runtime-state">checking</span>
         <button id="codex-runtime-action" class="text-button" type="button"></button>
       </div>
-      <div id="anthropic-runtime" class="runtime-detail hidden">
-        <input id="settings-anthropic-key" type="password" placeholder="Anthropic API key" autocomplete="off" />
-      </div>
       <button id="runtime-save" class="primary-button" type="button">save runtime</button>
+    </div>
+
+    <div class="settings-group claude-desktop-group">
+      <h2>Claude Desktop</h2>
+      <button id="claude-desktop-action" class="connection-button" type="button">connect</button>
     </div>
 
     <div class="settings-group manual">
@@ -63,6 +65,23 @@
         <div><dt>edit</dt><dd>rename and lock the title</dd></div>
         <div><dt>circle</dt><dd>pin or unpin this window</dd></div>
       </dl>
+    </div>
+
+    <div id="anthropic-modal" class="settings-modal hidden" role="dialog" aria-modal="true" aria-labelledby="anthropic-modal-title">
+      <div id="anthropic-modal-backdrop" class="settings-modal-backdrop" aria-hidden="true"></div>
+      <div class="settings-modal-card">
+        <header>
+          <h2 id="anthropic-modal-title">Anthropic</h2>
+          <button id="anthropic-modal-close" class="icon-button" type="button" aria-label="Close Anthropic connection">
+            <svg viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M4 4l8 8M12 4l-8 8"></path>
+            </svg>
+          </button>
+        </header>
+        <label for="settings-anthropic-key">API key</label>
+        <input id="settings-anthropic-key" type="password" placeholder="sk-ant-…" autocomplete="off" />
+        <button id="anthropic-runtime-save" class="primary-button" type="button">save</button>
+      </div>
     </div>
   </section>
 

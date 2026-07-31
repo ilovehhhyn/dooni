@@ -19,11 +19,6 @@
   align-items: center;
   gap: 4px;
 }
-.session-count {
-  color: var(--muted);
-  font-size: var(--font-meta);
-  line-height: 16px;
-}
 
 .icon-button {
   width: 30px;
@@ -105,13 +100,12 @@
   display: block;
   width: 100%;
   min-width: 0;
-  overflow: hidden;
   color: var(--ink);
   font-size: var(--font-title);
   font-weight: 600;
   line-height: 20px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
   cursor: pointer;
 }
 .list-title:hover { text-decoration: underline; text-underline-offset: 3px; }
@@ -165,46 +159,43 @@
   letter-spacing: .06em;
   text-transform: uppercase;
 }
+.settings-group-title {
+  min-height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+.settings-group-title h2 { margin-bottom: 0; }
 .runtime-picker {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 4px;
-  padding: 4px;
-  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 6px;
   background: var(--soft);
 }
 .runtime-option {
-  min-height: 30px;
-  padding: 4px 8px;
+  min-height: 20px;
+  padding: 2px 7px;
   border: 0;
-  border-radius: 8px;
+  border-radius: 4px;
   color: var(--muted);
   background: transparent;
   cursor: pointer;
+  font-size: var(--font-meta);
+  line-height: 16px;
 }
 .runtime-option.selected {
   color: var(--ink);
   background: var(--paper);
 }
 .runtime-detail {
-  min-height: 40px;
+  min-height: 30px;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding-top: 8px;
-  color: var(--muted);
-  font-size: var(--font-meta);
-  line-height: 16px;
-}
-.runtime-detail input {
-  width: 100%;
-  min-height: 36px;
-  padding: 8px 10px;
-  border: 0;
-  border-radius: 8px;
-  color: var(--ink);
-  background: var(--soft);
+  padding-top: 2px;
 }
 .text-button {
   min-height: 30px;
@@ -227,6 +218,83 @@
   background: var(--ink);
   cursor: pointer;
   font-weight: 600;
+}
+.primary-button:disabled {
+  cursor: default;
+  opacity: .45;
+}
+.connection-button {
+  width: 100%;
+  min-height: 36px;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: 8px;
+  color: var(--paper);
+  background: var(--ink);
+  cursor: pointer;
+  font-weight: 600;
+}
+.connection-button:disabled,
+.connection-button.connected {
+  color: var(--muted);
+  background: var(--soft);
+  cursor: default;
+  opacity: 1;
+}
+.settings-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+.settings-modal-backdrop {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: rgba(255, 255, 255, .82);
+  cursor: default;
+}
+.settings-modal-card {
+  position: relative;
+  z-index: 1;
+  width: min(100%, 300px);
+  padding: 12px;
+  border-radius: 12px;
+  background: var(--paper);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, .16);
+}
+.settings-modal-card header {
+  min-height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+.settings-modal-card h2 {
+  color: var(--ink);
+  font-size: var(--font-title);
+  font-weight: 600;
+  line-height: 20px;
+}
+.settings-modal-card label {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--muted);
+  font-size: var(--font-meta);
+  line-height: 16px;
+}
+.settings-modal-card input {
+  width: 100%;
+  min-height: 36px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 8px;
+  color: var(--ink);
+  background: var(--soft);
 }
 .manual dl {
   display: flex;

@@ -2,7 +2,7 @@
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>Chat</title>
+  <title></title>
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
@@ -19,19 +19,33 @@
       <div class="onboard-title">connect dooni</div>
       <label>your name<input id="ob-name" type="text" placeholder="helen" autocomplete="name" /></label>
 
-      <div class="auth-card">
-        <span id="ob-codex-dot" class="auth-dot"></span>
-        <div>
-          <strong>Codex</strong>
-          <span id="ob-codex-status">checking</span>
+      <div id="ob-runtime-step" class="onboarding-step">
+        <div class="auth-card">
+          <span id="ob-codex-dot" class="auth-dot"></span>
+          <div>
+            <strong>Codex</strong>
+            <span id="ob-codex-status">checking</span>
+          </div>
+        </div>
+        <button id="ob-codex-action" class="ob-primary" type="button" disabled>checking</button>
+
+        <button id="ob-use-anthropic" class="ob-secondary" type="button">use Anthropic API instead</button>
+        <div id="ob-anthropic-panel" class="anthropic-panel hidden">
+          <label>anthropic api key<input id="ob-anthropic-key" type="password" placeholder="sk-ant-..." autocomplete="off" /></label>
+          <button id="ob-anthropic-save" class="ob-primary" type="button">continue with Anthropic</button>
         </div>
       </div>
-      <button id="ob-codex-action" class="ob-primary" type="button" disabled>checking</button>
 
-      <button id="ob-use-anthropic" class="ob-secondary" type="button">use Anthropic API instead</button>
-      <div id="ob-anthropic-panel" class="anthropic-panel hidden">
-        <label>anthropic api key<input id="ob-anthropic-key" type="password" placeholder="sk-ant-..." autocomplete="off" /></label>
-        <button id="ob-anthropic-save" class="ob-primary" type="button">continue with Anthropic</button>
+      <div id="ob-claude-step" class="onboarding-step hidden">
+        <div class="auth-card">
+          <span id="ob-claude-dot" class="auth-dot"></span>
+          <div>
+            <strong>Claude Desktop</strong>
+            <span id="ob-claude-status">checking</span>
+          </div>
+        </div>
+        <button id="ob-claude-action" class="ob-primary" type="button" disabled>checking</button>
+        <button id="ob-claude-skip" class="ob-secondary" type="button">skip Claude Desktop</button>
       </div>
       <div id="ob-error"></div>
     </div>

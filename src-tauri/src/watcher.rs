@@ -1,7 +1,7 @@
-use crate::session_store::{self, SessionMeta};
+use crate::session_store::{self, AskedPromptLocator, SessionMeta};
 use crate::sessions::{
-    agent_from_path, history_context, is_background_agent, limit_title, project_label,
-    session_id_from_path, title_without_project_prefix, window_label_for,
+    agent_from_path, history_context, history_conversation_id, is_background_agent, limit_title,
+    project_label, session_id_from_path, title_without_project_prefix, window_label_for,
 };
 use crate::{AppState, Turn};
 use anyhow::Result;
@@ -197,12 +197,14 @@ async fn process_file(
     let mut new_offset = offset;
     loop {
         line.clear();
+        let line_position = new_offset;
         let n = reader.read_line(&mut line).await?;
         if n == 0 {
             break;
         }
         new_offset += n as u64;
-        if let Some(t) = parse_turn(&line) {
+        if let Some(mut t) = parse_turn(&line) {
+            t.history_position = line_position;
             new_turns.push(t);
         }
     }
@@ -231,7 +233,7 @@ async fn process_file(
         (s.turns.clone(), trig)
     };
 
-    let (all_user_prompts, all_user_prompt_timestamps) =
+    let (all_user_prompts, all_user_prompt_timestamps, all_user_prompt_locators) =
         user_prompt_data_from_turns(&turns_snapshot);
     let (current_title, title_locked, project_dir, mut excluded_indexes) = {
         let meta = state.session_meta.lock().unwrap();
@@ -261,12 +263,18 @@ async fn process_file(
         &all_user_prompt_timestamps,
         &excluded_indexes,
     );
+    let visible_locators = visible_user_prompt_locators(
+        &all_user_prompts,
+        &all_user_prompt_locators,
+        &excluded_indexes,
+    );
     persist_prompt_history(
         app,
         state,
         &session_id,
         visible_prompts,
         visible_timestamps,
+        visible_locators,
         None,
     );
 
@@ -319,6 +327,11 @@ async fn process_file(
                 &all_user_prompt_timestamps,
                 &excluded_indexes,
             );
+            let visible_locators = visible_user_prompt_locators(
+                &all_user_prompts,
+                &all_user_prompt_locators,
+                &excluded_indexes,
+            );
             {
                 let mut metadata = state.session_meta.lock().unwrap();
                 if let Some(session) = metadata.get_mut(&session_id) {
@@ -335,14 +348,9 @@ async fn process_file(
                 &session_id,
                 visible_prompts,
                 visible_timestamps,
+                visible_locators,
                 updated_title.clone(),
             );
-            if let (Some(title), Some(window)) = (
-                updated_title.as_ref(),
-                app.get_webview_window(&window_label_for(&session_id)),
-            ) {
-                let _ = window.set_title(title);
-            }
         }
         Err(error) => {
             eprintln!("[dooni] history review error: {error:?}");
@@ -364,6 +372,11 @@ async fn process_file(
                         &all_user_prompt_timestamps,
                         &excluded_indexes,
                     ),
+                    visible_user_prompt_locators(
+                        &all_user_prompts,
+                        &all_user_prompt_locators,
+                        &excluded_indexes,
+                    ),
                     Some(fallback),
                 );
             }
@@ -374,16 +387,27 @@ async fn process_file(
     Ok(())
 }
 
-fn user_prompt_data_from_turns(turns: &[Turn]) -> (Vec<String>, Vec<Option<String>>) {
+fn user_prompt_data_from_turns(
+    turns: &[Turn],
+) -> (Vec<String>, Vec<Option<String>>, Vec<AskedPromptLocator>) {
     let mut prompts = Vec::new();
     let mut timestamps = Vec::new();
+    let mut locators = Vec::new();
+    let mut occurrences = HashMap::<String, usize>::new();
     for turn in turns.iter().filter(|turn| turn.role == "user") {
         if let Some(prompt) = clean_user_prompt(&turn.text) {
+            let occurrence = occurrences.entry(prompt.clone()).or_default();
+            *occurrence += 1;
             prompts.push(prompt);
             timestamps.push(turn.timestamp.clone());
+            locators.push(AskedPromptLocator {
+                turn_id: turn.source_turn_id.clone(),
+                history_position: turn.history_position,
+                occurrence: *occurrence,
+            });
         }
     }
-    (prompts, timestamps)
+    (prompts, timestamps, locators)
 }
 
 #[cfg(test)]
@@ -425,6 +449,8 @@ fn cleaned_turn(turn: &Turn) -> Option<Turn> {
             role: turn.role.clone(),
             text,
             timestamp: turn.timestamp.clone(),
+            source_turn_id: turn.source_turn_id.clone(),
+            history_position: turn.history_position,
         })
     } else {
         Some(turn.clone())
@@ -494,6 +520,21 @@ fn visible_user_prompt_timestamps(
         .collect()
 }
 
+fn visible_user_prompt_locators(
+    prompts: &[String],
+    locators: &[AskedPromptLocator],
+    excluded_indexes: &[usize],
+) -> Vec<AskedPromptLocator> {
+    prompts
+        .iter()
+        .enumerate()
+        .filter(|(index, prompt)| {
+            excluded_indexes.binary_search(index).is_err() && !is_obvious_continuation(prompt)
+        })
+        .map(|(index, _)| locators.get(index).cloned().unwrap_or_default())
+        .collect()
+}
+
 fn is_internal_user_payload(prompt: &str) -> bool {
     let text = prompt.trim_start();
     [
@@ -510,7 +551,7 @@ fn is_internal_user_payload(prompt: &str) -> bool {
     .any(|prefix| text.starts_with(prefix))
 }
 
-fn is_obvious_continuation(prompt: &str) -> bool {
+pub(crate) fn is_obvious_continuation(prompt: &str) -> bool {
     let normalized = prompt
         .trim()
         .to_lowercase()
@@ -542,6 +583,7 @@ fn persist_prompt_history(
     session_id: &str,
     prompts: Vec<String>,
     timestamps: Vec<Option<String>>,
+    locators: Vec<AskedPromptLocator>,
     title: Option<String>,
 ) {
     state
@@ -554,6 +596,7 @@ fn persist_prompt_history(
         if let Some(session) = metadata.get_mut(session_id) {
             session.asked_prompts = prompts.clone();
             session.asked_prompt_timestamps = timestamps.clone();
+            session.asked_prompt_locators = locators.clone();
         }
         if let Err(error) = session_store::save(&metadata) {
             eprintln!("[dooni] prompt persistence error: {error:?}");
@@ -564,6 +607,7 @@ fn persist_prompt_history(
         "session_id": session_id,
         "asked_prompts": prompts,
         "asked_prompt_timestamps": timestamps,
+        "asked_prompt_locators": locators,
         "title": title,
     });
     if app.get_webview_window(&label).is_some() {
@@ -597,7 +641,10 @@ fn refresh_session_meta(files: &[PathBuf], app: &AppHandle, state: &Arc<AppState
     {
         let mut map = state.session_meta.lock().unwrap();
         // Mark all as not running; we'll flip the truly-active ones back below.
-        for m in map.values_mut() {
+        for m in map
+            .values_mut()
+            .filter(|session| !session.jsonl_path.starts_with("claude-desktop://"))
+        {
             if m.running {
                 m.running = false;
                 changed = true;
@@ -607,6 +654,7 @@ fn refresh_session_meta(files: &[PathBuf], app: &AppHandle, state: &Arc<AppState
             let session_id = session_id_from_path(path);
             let agent = agent_from_path(path).to_string();
             let (project_dir, surface) = history_context(path);
+            let source_conversation_id = history_conversation_id(path);
             let project_name = project_label(project_dir.as_deref());
             let jsonl_path = path.to_string_lossy().to_string();
             let mtime = path
@@ -634,11 +682,13 @@ fn refresh_session_meta(files: &[PathBuf], app: &AppHandle, state: &Arc<AppState
                     project_dir: project_dir.clone(),
                     project_name: project_name.clone(),
                     jsonl_path: jsonl_path.clone(),
+                    source_conversation_id: source_conversation_id.clone(),
                     surface: surface.clone(),
                     last_active: mtime,
                     running,
                     asked_prompts: Vec::new(),
                     asked_prompt_timestamps: Vec::new(),
+                    asked_prompt_locators: Vec::new(),
                     future_prompts: Vec::new(),
                 }
             });
@@ -656,6 +706,10 @@ fn refresh_session_meta(files: &[PathBuf], app: &AppHandle, state: &Arc<AppState
             }
             if entry.jsonl_path != jsonl_path {
                 entry.jsonl_path = jsonl_path;
+                changed = true;
+            }
+            if entry.source_conversation_id != source_conversation_id {
+                entry.source_conversation_id = source_conversation_id;
                 changed = true;
             }
             if entry.surface != surface {
@@ -713,6 +767,12 @@ fn parse_turn(line: &str) -> Option<Turn> {
         .and_then(|value| value.as_str())
         .map(str::to_string);
     let t = v.get("type").and_then(|x| x.as_str());
+    let top_level_source_id = v
+        .get("uuid")
+        .or_else(|| v.get("promptId"))
+        .or_else(|| v.get("id"))
+        .and_then(|value| value.as_str())
+        .map(str::to_string);
     if t == Some("user") || t == Some("assistant") {
         let msg = v.get("message")?;
         let content = msg.get("content")?;
@@ -724,6 +784,8 @@ fn parse_turn(line: &str) -> Option<Turn> {
             role: t.unwrap().to_string(),
             text,
             timestamp: timestamp.clone(),
+            source_turn_id: top_level_source_id.clone(),
+            history_position: 0,
         });
     }
     if let Some(role) = v.get("role").and_then(|r| r.as_str()) {
@@ -734,6 +796,8 @@ fn parse_turn(line: &str) -> Option<Turn> {
                     role: role.to_string(),
                     text,
                     timestamp: timestamp.clone(),
+                    source_turn_id: top_level_source_id.clone(),
+                    history_position: 0,
                 });
             }
         }
@@ -752,10 +816,18 @@ fn parse_turn(line: &str) -> Option<Turn> {
             .and_then(extract_text)
             .unwrap_or_default();
         if !text.trim().is_empty() {
+            let source_turn_id = payload
+                .get("internal_chat_message_metadata_passthrough")
+                .and_then(|metadata| metadata.get("turn_id"))
+                .and_then(|value| value.as_str())
+                .map(str::to_string)
+                .or(top_level_source_id);
             return Some(Turn {
                 role: role.to_string(),
                 text,
                 timestamp,
+                source_turn_id,
+                history_position: 0,
             });
         }
     }
@@ -840,11 +912,12 @@ mod tests {
 
     #[test]
     fn parse_codex_response_item_shape() {
-        let line = r#"{"timestamp":"2026-07-30T23:55:00Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"hello desktop"}]}}"#;
+        let line = r#"{"timestamp":"2026-07-30T23:55:00Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"hello desktop"}],"internal_chat_message_metadata_passthrough":{"turn_id":"turn-123"}}}"#;
         let t = parse_turn(line).unwrap();
         assert_eq!(t.role, "user");
         assert_eq!(t.text.trim(), "hello desktop");
         assert_eq!(t.timestamp.as_deref(), Some("2026-07-30T23:55:00Z"));
+        assert_eq!(t.source_turn_id.as_deref(), Some("turn-123"));
     }
 
     #[test]
@@ -872,16 +945,22 @@ mod tests {
                 role: "user".into(),
                 text: "First prompt\nwith a second line".into(),
                 timestamp: Some("2026-07-29T23:50:00Z".into()),
+                source_turn_id: Some("turn-1".into()),
+                history_position: 10,
             },
             Turn {
                 role: "assistant".into(),
                 text: "answer".into(),
                 timestamp: Some("2026-07-29T23:51:00Z".into()),
+                source_turn_id: Some("turn-1".into()),
+                history_position: 20,
             },
             Turn {
                 role: "user".into(),
                 text: "proceed".into(),
                 timestamp: Some("2026-07-30T00:01:00Z".into()),
+                source_turn_id: Some("turn-2".into()),
+                history_position: 30,
             },
         ];
         let prompts = user_prompts_from_turns(&turns);
@@ -890,10 +969,14 @@ mod tests {
             visible_user_prompts(&prompts, &[]),
             vec!["First prompt\nwith a second line"]
         );
-        let (prompts, timestamps) = user_prompt_data_from_turns(&turns);
+        let (prompts, timestamps, locators) = user_prompt_data_from_turns(&turns);
         assert_eq!(
             visible_user_prompt_timestamps(&prompts, &timestamps, &[]),
             vec![Some("2026-07-29T23:50:00Z".to_string())]
+        );
+        assert_eq!(
+            visible_user_prompt_locators(&prompts, &locators, &[])[0].turn_id,
+            Some("turn-1".to_string())
         );
     }
 
@@ -920,6 +1003,8 @@ Change the launch icon.
             role: "user".into(),
             text: "# Files mentioned by the user:\n\n## Screenshot.png: /tmp/a.png\n\n## My request for Codex:\nKeep me".into(),
             timestamp: Some("2026-07-30T02:00:00Z".into()),
+            source_turn_id: None,
+            history_position: 0,
         }];
         assert_eq!(bounded_title_history(&turns)[0].text, "Keep me");
     }

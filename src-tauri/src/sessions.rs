@@ -103,6 +103,31 @@ pub fn history_context(path: &Path) -> (Option<String>, String) {
     (project_dir, surface)
 }
 
+/// Read the provider's technical conversation id from the history header.
+/// Codex stores it in `session_meta.payload.id`; Claude Code repeats
+/// `sessionId` on its records.
+pub fn history_conversation_id(path: &Path) -> Option<String> {
+    let file = std::fs::File::open(path).ok()?;
+    for line in BufReader::new(file).lines().take(20).flatten() {
+        let Ok(v) = serde_json::from_str::<serde_json::Value>(&line) else {
+            continue;
+        };
+        if v.get("type").and_then(|value| value.as_str()) == Some("session_meta") {
+            if let Some(id) = v
+                .get("payload")
+                .and_then(|payload| payload.get("id"))
+                .and_then(|id| id.as_str())
+            {
+                return Some(id.to_string());
+            }
+        }
+        if let Some(id) = v.get("sessionId").and_then(|id| id.as_str()) {
+            return Some(id.to_string());
+        }
+    }
+    None
+}
+
 /// Prefer the repository root name when the working directory sits inside a
 /// repository; otherwise use the working directory's final path component.
 pub fn project_label(project_dir: Option<&str>) -> Option<String> {
@@ -178,6 +203,28 @@ mod tests {
     fn session_id_from_test_filename() {
         let p = PathBuf::from("/tmp/welfare2-1783417741.jsonl");
         assert_eq!(session_id_from_path(&p), "welfare2-1783417741");
+    }
+
+    #[test]
+    fn reads_codex_conversation_id_from_history_header() {
+        let path = std::env::temp_dir().join(format!(
+            "dooni-conversation-id-{}-{}.jsonl",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::write(
+            &path,
+            "{\"type\":\"session_meta\",\"payload\":{\"id\":\"thread-123\",\"cwd\":\"/tmp\"}}\n",
+        )
+        .unwrap();
+        assert_eq!(
+            history_conversation_id(&path).as_deref(),
+            Some("thread-123")
+        );
+        let _ = std::fs::remove_file(path);
     }
 
     #[test]

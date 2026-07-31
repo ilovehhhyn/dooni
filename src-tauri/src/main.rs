@@ -1,5 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod claude_desktop;
 mod codex_runtime;
 mod config;
 mod focus;
@@ -37,6 +38,8 @@ pub struct Turn {
     pub role: String,
     pub text: String,
     pub timestamp: Option<String>,
+    pub source_turn_id: Option<String>,
+    pub history_position: u64,
 }
 
 #[tauri::command]
@@ -141,6 +144,16 @@ fn open_codex_install() -> Result<(), String> {
 }
 
 #[tauri::command]
+fn get_claude_desktop_access_status() -> focus::ClaudeDesktopAccessStatus {
+    focus::claude_desktop_access_status()
+}
+
+#[tauri::command]
+fn open_claude_desktop_access() -> Result<(), String> {
+    focus::open_claude_desktop_access().map_err(|error| error.to_string())
+}
+
+#[tauri::command]
 fn get_sessions(state: tauri::State<Arc<AppState>>) -> Vec<session_store::SessionMeta> {
     let surfaced = state.surfaced_sessions.lock().unwrap().clone();
     let m = state.session_meta.lock().unwrap();
@@ -191,19 +204,54 @@ fn focus_session(state: tauri::State<Arc<AppState>>, session_id: String) -> Resu
 }
 
 #[tauri::command]
-fn launch_session_window(
-    app: tauri::AppHandle,
-    state: tauri::State<Arc<AppState>>,
+async fn locate_asked_prompt(
+    state: tauri::State<'_, Arc<AppState>>,
     session_id: String,
-) -> Result<(), String> {
-    open_session_window(&app, state.inner().as_ref(), &session_id)
+    prompt_index: usize,
+) -> Result<focus::LocatePromptResult, String> {
+    let (surface, project_dir, conversation_id, prompt, locator) = {
+        let sessions = state.session_meta.lock().unwrap();
+        let session = sessions
+            .get(&session_id)
+            .ok_or_else(|| "session not found".to_string())?;
+        let prompt = session
+            .asked_prompts
+            .get(prompt_index)
+            .cloned()
+            .ok_or_else(|| "prompt not found".to_string())?;
+        (
+            session.surface.clone(),
+            session.project_dir.clone(),
+            session.source_conversation_id.clone(),
+            prompt,
+            session
+                .asked_prompt_locators
+                .get(prompt_index)
+                .cloned()
+                .unwrap_or_default(),
+        )
+    };
+
+    tauri::async_runtime::spawn_blocking(move || {
+        focus::locate_prompt(
+            &surface,
+            conversation_id.as_deref(),
+            project_dir.as_deref(),
+            &prompt,
+            locator.occurrence,
+        )
+        .map_err(|error| error.to_string())
+    })
+    .await
+    .map_err(|error| error.to_string())?
 }
 
-fn open_session_window(
-    app: &tauri::AppHandle,
-    state: &AppState,
-    session_id: &str,
-) -> Result<(), String> {
+#[tauri::command]
+fn launch_session_window(app: tauri::AppHandle, session_id: String) -> Result<(), String> {
+    open_session_window(&app, &session_id)
+}
+
+fn open_session_window(app: &tauri::AppHandle, session_id: &str) -> Result<(), String> {
     use tauri::{WebviewUrl, WebviewWindowBuilder};
     let label = sessions::window_label_for(&session_id);
     if let Some(win) = app.get_webview_window(&label) {
@@ -212,15 +260,8 @@ fn open_session_window(
         let _ = win.set_focus();
         return Ok(());
     }
-    let title = state
-        .session_meta
-        .lock()
-        .unwrap()
-        .get(session_id)
-        .map(|s| s.title.clone())
-        .unwrap_or_else(|| session_id.chars().take(12).collect());
     let mut builder = WebviewWindowBuilder::new(app, &label, WebviewUrl::App("index.html".into()))
-        .title(title)
+        .title("")
         .inner_size(420.0, 560.0)
         .min_inner_size(340.0, 420.0)
         .always_on_top(false)
@@ -254,7 +295,7 @@ fn show_shortcut_session(app: &tauri::AppHandle) {
         .map(|session| session.session_id.clone());
 
     if let Some(session_id) = session_id {
-        if let Err(error) = open_session_window(app, state.inner().as_ref(), &session_id) {
+        if let Err(error) = open_session_window(app, &session_id) {
             eprintln!("[dooni] shortcut window error: {error}");
         }
     }
@@ -308,10 +349,13 @@ fn main() {
             get_codex_status,
             start_codex_login,
             open_codex_install,
+            get_claude_desktop_access_status,
+            open_claude_desktop_access,
             get_sessions,
             get_session,
             rename_session,
             focus_session,
+            locate_asked_prompt,
             launch_session_window,
             save_future_prompts
         ])
@@ -329,6 +373,14 @@ fn main() {
             tauri::async_runtime::spawn(async move {
                 if let Err(e) = watcher::run(hw, sw).await {
                     eprintln!("[dooni] watcher error: {e:?}");
+                }
+            });
+
+            let claude_handle = handle.clone();
+            let claude_state = s.clone();
+            tauri::async_runtime::spawn(async move {
+                if let Err(error) = claude_desktop::run(claude_handle, claude_state).await {
+                    eprintln!("[dooni] Claude Desktop watcher error: {error:?}");
                 }
             });
 

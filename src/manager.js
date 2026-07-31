@@ -1,16 +1,19 @@
 const els = {
   list: document.getElementById("mgr-list-ul"),
-  count: document.getElementById("session-count"),
   status: document.getElementById("mgr-status"),
   settings: document.getElementById("settings-panel"),
   settingsButton: document.getElementById("settings-btn"),
   settingsClose: document.getElementById("settings-close"),
+  runtimeHeading: document.getElementById("runtime-heading"),
   codexDetail: document.getElementById("codex-runtime"),
-  codexState: document.getElementById("codex-runtime-state"),
   codexAction: document.getElementById("codex-runtime-action"),
-  anthropicDetail: document.getElementById("anthropic-runtime"),
+  anthropicModal: document.getElementById("anthropic-modal"),
+  anthropicModalBackdrop: document.getElementById("anthropic-modal-backdrop"),
+  anthropicModalClose: document.getElementById("anthropic-modal-close"),
   anthropicKey: document.getElementById("settings-anthropic-key"),
+  anthropicRuntimeSave: document.getElementById("anthropic-runtime-save"),
   runtimeSave: document.getElementById("runtime-save"),
+  claudeDesktopAction: document.getElementById("claude-desktop-action"),
 };
 
 const ICONS = {
@@ -22,6 +25,8 @@ let sessions = [];
 let config = null;
 let selectedRuntime = "codex";
 let codexStatus = { installed: false, authenticated: false };
+let claudeDesktopAccess = { installed: false, authorized: false };
+let settingsRefreshInFlight = false;
 
 function setStatus(message) {
   els.status.textContent = message || "";
@@ -30,7 +35,6 @@ function setStatus(message) {
 
 function renderList() {
   els.list.innerHTML = "";
-  els.count.textContent = `${sessions.length} chat${sessions.length === 1 ? "" : "s"}`;
   if (!sessions.length) {
     const empty = document.createElement("li");
     empty.className = "list-empty";
@@ -189,37 +193,65 @@ function paintRuntime() {
   document.querySelectorAll(".runtime-option").forEach((option) => {
     option.classList.toggle("selected", option.dataset.runtime === selectedRuntime);
   });
-  els.codexDetail.classList.toggle("hidden", selectedRuntime !== "codex");
-  els.anthropicDetail.classList.toggle("hidden", selectedRuntime !== "anthropic");
+  const connected = selectedRuntime === "codex"
+    ? codexStatus.authenticated
+    : !!config?.anthropic_connected;
+  els.runtimeHeading.textContent = `runtime ${connected ? "connected" : "disconnected"}`;
+  els.codexDetail.classList.toggle(
+    "hidden",
+    selectedRuntime !== "codex" || codexStatus.authenticated,
+  );
 }
 
 function paintCodexStatus() {
   if (!codexStatus.installed) {
-    els.codexState.textContent = "not installed";
-    els.codexAction.textContent = "install";
+    els.codexAction.textContent = "install Codex";
   } else if (!codexStatus.authenticated) {
-    els.codexState.textContent = "not connected";
-    els.codexAction.textContent = "sign in";
+    els.codexAction.textContent = "connect Codex";
   } else {
-    els.codexState.textContent = "connected";
     els.codexAction.textContent = "";
   }
   els.codexAction.classList.toggle("hidden", codexStatus.authenticated);
+  paintRuntime();
 }
 
-async function refreshSettings() {
+function paintClaudeDesktopAccess() {
+  if (!claudeDesktopAccess.authorized) {
+    els.claudeDesktopAction.textContent = "connect";
+    els.claudeDesktopAction.disabled = false;
+    els.claudeDesktopAction.classList.remove("connected");
+    els.claudeDesktopAction.setAttribute(
+      "aria-label",
+      claudeDesktopAccess.installed ? "Connect Claude Desktop" : "Install Claude Desktop",
+    );
+  } else {
+    els.claudeDesktopAction.textContent = "disconnect";
+    els.claudeDesktopAction.disabled = true;
+    els.claudeDesktopAction.classList.add("connected");
+    els.claudeDesktopAction.setAttribute("aria-label", "Claude Desktop connected");
+  }
+}
+
+async function refreshSettings({ syncSelection = false } = {}) {
+  if (settingsRefreshInFlight) return;
+  settingsRefreshInFlight = true;
   try {
-    const [nextConfig, nextCodexStatus] = await Promise.all([
+    const [nextConfig, nextCodexStatus, nextClaudeDesktopAccess] = await Promise.all([
       window.__TAURI__.core.invoke("get_config"),
       window.__TAURI__.core.invoke("get_codex_status"),
+      window.__TAURI__.core.invoke("get_claude_desktop_access_status"),
     ]);
     config = nextConfig;
     codexStatus = nextCodexStatus;
-    selectedRuntime = config.runtime_provider || "codex";
+    claudeDesktopAccess = nextClaudeDesktopAccess;
+    if (syncSelection) selectedRuntime = config.runtime_provider || "codex";
     paintRuntime();
     paintCodexStatus();
+    paintClaudeDesktopAccess();
   } catch (error) {
     setStatus(`settings error: ${error}`);
+  } finally {
+    settingsRefreshInFlight = false;
   }
 }
 
@@ -230,30 +262,87 @@ async function handleCodexAction() {
     } else if (!codexStatus.authenticated) {
       els.codexAction.textContent = "opening…";
       await window.__TAURI__.core.invoke("start_codex_login");
-      setTimeout(refreshSettings, 1500);
+      setTimeout(() => refreshSettings(), 1500);
     }
   } catch (error) {
     setStatus(`Codex error: ${error}`);
   }
 }
 
-async function saveRuntime() {
+async function handleClaudeDesktopAction() {
   try {
-    if (selectedRuntime === "codex") {
-      codexStatus = await window.__TAURI__.core.invoke("get_codex_status");
-      paintCodexStatus();
-      if (!codexStatus.authenticated) {
-        setStatus("connect Codex first");
-        return;
-      }
-    }
-    const apiKey = els.anthropicKey.value.trim();
+    await window.__TAURI__.core.invoke("open_claude_desktop_access");
+    setTimeout(() => refreshSettings(), 1000);
+  } catch (error) {
+    setStatus(`Claude Desktop error: ${error}`);
+  }
+}
+
+function openAnthropicModal() {
+  els.anthropicKey.value = "";
+  els.anthropicKey.placeholder = config?.anthropic_connected
+    ? "API key saved — enter to replace"
+    : "sk-ant-…";
+  els.anthropicModal.classList.remove("hidden");
+  requestAnimationFrame(() => els.anthropicKey.focus());
+}
+
+function closeAnthropicModal({ revertSelection = true } = {}) {
+  els.anthropicModal.classList.add("hidden");
+  els.anthropicKey.value = "";
+  if (revertSelection && config?.runtime_provider !== "anthropic") {
+    selectedRuntime = config?.runtime_provider || "codex";
+    paintRuntime();
+  }
+}
+
+async function saveAnthropicRuntime() {
+  const apiKey = els.anthropicKey.value.trim();
+  if (!apiKey && !config?.anthropic_connected) {
+    setStatus("Anthropic API key required");
+    els.anthropicKey.focus();
+    return;
+  }
+  els.anthropicRuntimeSave.disabled = true;
+  els.anthropicRuntimeSave.textContent = "saving…";
+  try {
     config = await window.__TAURI__.core.invoke("update_runtime_provider", {
-      runtimeProvider: selectedRuntime,
+      runtimeProvider: "anthropic",
       apiKey: apiKey || null,
     });
-    els.anthropicKey.value = "";
-    els.settings.classList.add("hidden");
+    selectedRuntime = "anthropic";
+    closeAnthropicModal({ revertSelection: false });
+    paintRuntime();
+    setStatus("runtime saved");
+    await refreshSettings({ syncSelection: true });
+  } catch (error) {
+    setStatus(`runtime error: ${error}`);
+  } finally {
+    els.anthropicRuntimeSave.disabled = false;
+    els.anthropicRuntimeSave.textContent = "save";
+  }
+}
+
+async function saveRuntime() {
+  if (selectedRuntime === "anthropic") {
+    openAnthropicModal();
+    return;
+  }
+  try {
+    codexStatus = await window.__TAURI__.core.invoke("get_codex_status");
+    paintCodexStatus();
+    if (!codexStatus.authenticated) {
+      setStatus("connect Codex first");
+      return;
+    }
+    config = await window.__TAURI__.core.invoke("update_runtime_provider", {
+      runtimeProvider: "codex",
+      apiKey: null,
+    });
+    selectedRuntime = "codex";
+    paintRuntime();
+    setStatus("runtime saved");
+    await refreshSettings({ syncSelection: true });
   } catch (error) {
     setStatus(`runtime error: ${error}`);
   }
@@ -263,17 +352,30 @@ function setupSettings() {
   paintRuntime();
   els.settingsButton.addEventListener("click", async () => {
     els.settings.classList.remove("hidden");
-    await refreshSettings();
+    await refreshSettings({ syncSelection: true });
   });
-  els.settingsClose.addEventListener("click", () => els.settings.classList.add("hidden"));
+  els.settingsClose.addEventListener("click", () => {
+    closeAnthropicModal();
+    els.settings.classList.add("hidden");
+  });
   document.querySelectorAll(".runtime-option").forEach((option) => {
     option.addEventListener("click", () => {
       selectedRuntime = option.dataset.runtime;
       paintRuntime();
+      if (selectedRuntime === "anthropic") openAnthropicModal();
     });
   });
   els.codexAction.addEventListener("click", handleCodexAction);
+  els.claudeDesktopAction.addEventListener("click", handleClaudeDesktopAction);
   els.runtimeSave.addEventListener("click", saveRuntime);
+  els.anthropicRuntimeSave.addEventListener("click", saveAnthropicRuntime);
+  els.anthropicModalClose.addEventListener("click", () => closeAnthropicModal());
+  els.anthropicModalBackdrop.addEventListener("click", () => closeAnthropicModal());
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && !els.anthropicModal.classList.contains("hidden")) {
+      closeAnthropicModal();
+    }
+  });
 }
 
 async function init() {
@@ -293,7 +395,7 @@ async function init() {
   });
   setInterval(refreshSessions, 10000);
   setInterval(() => {
-    if (!els.settings.classList.contains("hidden") && !codexStatus.authenticated) {
+    if (!els.settings.classList.contains("hidden")) {
       refreshSettings();
     }
   }, 3000);
