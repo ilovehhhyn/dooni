@@ -1,7 +1,7 @@
 use crate::session_store::{self, SessionMeta};
 use crate::sessions::{
-    agent_from_path, history_context, limit_title, project_label, session_id_from_path,
-    title_without_project_prefix, window_label_for,
+    agent_from_path, history_context, is_background_agent, limit_title, project_label,
+    session_id_from_path, title_without_project_prefix, window_label_for,
 };
 use crate::{AppState, Turn};
 use anyhow::Result;
@@ -144,7 +144,7 @@ fn collect_latest_files(roots: &[PathBuf], max: usize) -> Vec<PathBuf> {
             if p.extension().and_then(|s| s.to_str()) != Some("jsonl") {
                 continue;
             }
-            if p.components().any(|c| c.as_os_str() == "subagents") {
+            if is_background_agent(p) {
                 continue;
             }
             let Some(modified) = p.metadata().and_then(|m| m.modified()).ok() else {

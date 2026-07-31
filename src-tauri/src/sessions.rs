@@ -26,6 +26,22 @@ pub fn window_label_for(session_id: &str) -> String {
     format!("session-{sanitized}")
 }
 
+/// True if a transcript belongs to a background *subagent* rather than a chat
+/// the user is having. Claude Code stores subagent (Task-tool) transcripts in a
+/// `<session-uuid>/subagents/` directory, named `agent-*.jsonl`, with every
+/// line marked `"isSidechain":true`. These are internal helpers — dooni should
+/// never memo, record, or show them.
+pub fn is_background_agent(path: &Path) -> bool {
+    let s = path.to_string_lossy();
+    if s.contains("/subagents/") {
+        return true;
+    }
+    matches!(
+        path.file_stem().and_then(|x| x.to_str()),
+        Some(stem) if stem.starts_with("agent-")
+    )
+}
+
 /// Classify which agent a JSONL log path belongs to based on the roots
 /// dooni watches. Returns "claude", "codex", or "unknown".
 pub fn agent_from_path(path: &Path) -> &'static str {
@@ -181,6 +197,19 @@ mod tests {
     #[test]
     fn main_label_is_not_a_session() {
         assert_eq!(session_id_from_label("main"), None);
+    }
+
+    #[test]
+    fn background_agent_detected() {
+        assert!(is_background_agent(&PathBuf::from(
+            "/Users/x/.claude/projects/-Users-x/uuid/subagents/agent-abc.jsonl"
+        )));
+        assert!(is_background_agent(&PathBuf::from(
+            "/foo/agent-deadbeef.jsonl"
+        )));
+        assert!(!is_background_agent(&PathBuf::from(
+            "/Users/x/.claude/projects/-Users-x/aff54b9a-1234.jsonl"
+        )));
     }
 
     #[test]
