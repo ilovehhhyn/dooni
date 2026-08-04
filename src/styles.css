@@ -194,7 +194,7 @@ textarea:focus-visible,
 .session-controls {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: space-between;
   gap: 6px;
   padding: 0 12px 8px;
 }
@@ -438,28 +438,15 @@ textarea:focus-visible,
 .prompt-composer {
   display: flex;
   align-items: flex-start;
-  gap: 16px;
   flex: 0 0 auto;
   margin-top: 10px;
   padding: 10px 12px;
   background: var(--soft);
   border-radius: 10px;
 }
-.composer-check {
-  width: 14px;
-  height: 14px;
-  /* Matches .prompt-check so the circle tracks the first typed line. */
-  margin-top: 2.5px;
-  flex: 0 0 auto;
-  background: transparent;
-  border: 1px solid #b8b8b8;
-  border-radius: 50%;
-  cursor: pointer;
-}
-.composer-check:hover { border-color: var(--ink); }
 .prompt-composer textarea {
   width: 100%;
-  min-height: 19px;
+  min-height: 57px;
   max-height: 112px;
   padding: 0;
   resize: none;
