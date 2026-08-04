@@ -43,7 +43,18 @@ cd dooni
 ./dooni install
 ```
 
-dooni is free. The app is not signed or notarized.
+dooni is free. The app is not notarized. It is signed on your machine with a
+local self-signed identity that the installer creates once, so macOS keeps the
+Accessibility permission you grant it across rebuilds. Ad-hoc signing is used as
+a fallback if that identity cannot be created.
+
+### Claude app tracking
+
+Tracking prompts in the Claude desktop app needs Accessibility permission:
+System Settings → Privacy & Security → Accessibility. Claude is an Electron app
+and keeps its accessibility tree switched off until asked, so dooni turns it on
+and waits up to five seconds for it to build. Claude Code and Codex CLI chats are
+read from their history files instead and need no permission.
 
 Codex runtime authentication is the default, so you do not need an API key to start. The Anthropic runtime is optional.
 

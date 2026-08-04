@@ -55,8 +55,20 @@ pub async fn run(app: AppHandle, state: Arc<AppState>) -> Result<()> {
 
             let path_key = path.to_string_lossy().to_string();
             let previous_offset = activation_offsets.get(&path_key).copied().unwrap_or(0);
+            // A chat history can be rotated or removed between listing and
+            // reading it. Skip this file for now instead of tearing down the
+            // watcher, which would stop tracking every chat until relaunch.
             let (next_offset, has_new_user_turn) =
-                appended_segment_has_user_turn(&path, previous_offset).await?;
+                match appended_segment_has_user_turn(&path, previous_offset).await {
+                    Ok(result) => result,
+                    Err(error) => {
+                        eprintln!(
+                            "[dooni] skipping {} this pass: {error:?}",
+                            path.display()
+                        );
+                        continue;
+                    }
+                };
             activation_offsets.insert(path_key, next_offset);
             if has_new_user_turn {
                 active_files.push((path, true));
@@ -437,10 +449,24 @@ fn clean_user_prompt(prompt: &str) -> Option<String> {
         if trimmed.starts_with("<image name=") && trimmed.contains(" path=") {
             continue;
         }
+        if is_image_attachment_scaffolding(trimmed) {
+            continue;
+        }
         kept.push(line);
     }
     let cleaned = kept.join("\n").trim().to_string();
     (!cleaned.is_empty()).then_some(cleaned)
+}
+
+/// Claude Code records a pasted or dragged image as its own user turn holding
+/// only `[Image: source: /path/to/file.png]`. That is generated scaffolding, not
+/// something the user typed, so it must not become an Asked prompt. The inline
+/// `[Image #1]` marker that sits inside a real sentence is left alone, because
+/// removing it would edit the user's own words.
+fn is_image_attachment_scaffolding(line: &str) -> bool {
+    line.starts_with("[Image")
+        && line.ends_with(']')
+        && line.contains("source:")
 }
 
 fn cleaned_turn(turn: &Turn) -> Option<Turn> {
@@ -998,6 +1024,27 @@ Change the launch icon.
     }
 
     #[test]
+    fn drops_claude_code_image_attachment_turns() {
+        // Claude Code writes the pasted image as a whole separate user turn.
+        assert_eq!(
+            clean_user_prompt(
+                "[Image: source: /var/folders/vx/T/TemporaryItems/Screenshot 2026-07-30.png]"
+            ),
+            None
+        );
+        // The inline marker is part of a real sentence and must survive intact.
+        assert_eq!(
+            clean_user_prompt("i turned on the toggle but [Image #1] dooni still says this"),
+            Some("i turned on the toggle but [Image #1] dooni still says this".to_string())
+        );
+        // Scaffolding attached beneath a real prompt is stripped, prompt kept.
+        assert_eq!(
+            clean_user_prompt("look at this\n[Image: source: /tmp/a.png]"),
+            Some("look at this".to_string())
+        );
+    }
+
+    #[test]
     fn title_history_uses_cleaned_user_prompts() {
         let turns = vec![Turn {
             role: "user".into(),
@@ -1056,6 +1103,81 @@ Change the launch icon.
             .await
             .unwrap();
         assert!(active);
+        std::fs::remove_file(path).unwrap();
+    }
+
+    fn temp_jsonl(tag: &str) -> std::path::PathBuf {
+        std::env::temp_dir().join(format!(
+            "dooni-{tag}-{}-{}.jsonl",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ))
+    }
+
+    #[tokio::test]
+    async fn an_image_attachment_turn_alone_does_not_admit_a_chat() {
+        let path = temp_jsonl("image-only");
+        std::fs::write(&path, "{\"role\":\"user\",\"content\":\"an old prompt\"}\n").unwrap();
+        let baseline = path.metadata().unwrap().len();
+
+        let mut file = std::fs::OpenOptions::new()
+            .append(true)
+            .open(&path)
+            .unwrap();
+        writeln!(
+            file,
+            "{{\"role\":\"user\",\"content\":\"[Image: source: /tmp/shot.png]\"}}"
+        )
+        .unwrap();
+        drop(file);
+
+        let (offset, active) = appended_segment_has_user_turn(&path, baseline)
+            .await
+            .unwrap();
+        assert!(
+            !active,
+            "a pasted image on its own is scaffolding, not a user prompt"
+        );
+
+        let mut file = std::fs::OpenOptions::new()
+            .append(true)
+            .open(&path)
+            .unwrap();
+        writeln!(file, "{{\"role\":\"user\",\"content\":\"now a real prompt\"}}").unwrap();
+        drop(file);
+        let (_, active) = appended_segment_has_user_turn(&path, offset).await.unwrap();
+        assert!(active);
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_missing_history_reports_an_error_rather_than_panicking() {
+        // The watcher loop turns this into a skipped file. Before, the error
+        // propagated out of run() and stopped tracking every chat until relaunch.
+        let path = temp_jsonl("never-created");
+        assert!(appended_segment_has_user_turn(&path, 0).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn a_truncated_history_is_reread_from_the_start() {
+        let path = temp_jsonl("truncated");
+        std::fs::write(
+            &path,
+            "{\"role\":\"user\",\"content\":\"first\"}\n{\"role\":\"user\",\"content\":\"second\"}\n",
+        )
+        .unwrap();
+        let long_offset = path.metadata().unwrap().len();
+
+        // Rotation leaves a shorter file; the stale offset must not be trusted.
+        std::fs::write(&path, "{\"role\":\"user\",\"content\":\"fresh\"}\n").unwrap();
+        let (offset, active) = appended_segment_has_user_turn(&path, long_offset)
+            .await
+            .unwrap();
+        assert!(active);
+        assert_eq!(offset, path.metadata().unwrap().len());
         std::fs::remove_file(path).unwrap();
     }
 }

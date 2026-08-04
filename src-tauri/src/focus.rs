@@ -15,13 +15,16 @@
 use anyhow::{anyhow, Result};
 use core_foundation::array::CFArray;
 use core_foundation::base::{CFType, CFTypeRef, TCFType};
+use core_foundation::boolean::CFBoolean;
+use core_foundation::dictionary::CFDictionary;
 use core_foundation::string::CFString;
 use core_foundation::url::CFURL;
 use serde::Serialize;
 use std::ffi::c_void;
 use std::io::Write;
 use std::process::{Command, Stdio};
-use std::time::Duration;
+use std::sync::{Mutex, OnceLock};
+use std::time::{Duration, Instant};
 
 const CG_HID_EVENT_TAP: u32 = 0;
 const CG_EVENT_FLAG_COMMAND: u64 = 1 << 20;
@@ -32,11 +35,17 @@ const KEY_ESCAPE: u16 = 53;
 #[link(name = "ApplicationServices", kind = "framework")]
 extern "C" {
     fn AXIsProcessTrusted() -> u8;
+    fn AXIsProcessTrustedWithOptions(options: *const c_void) -> u8;
     fn AXUIElementCreateApplication(pid: i32) -> *const c_void;
     fn AXUIElementCopyAttributeValue(
         element: *const c_void,
         attribute: *const c_void,
         value: *mut CFTypeRef,
+    ) -> i32;
+    fn AXUIElementSetAttributeValue(
+        element: *const c_void,
+        attribute: *const c_void,
+        value: CFTypeRef,
     ) -> i32;
     fn CGEventCreateKeyboardEvent(
         source: *mut c_void,
@@ -90,8 +99,23 @@ pub fn claude_desktop_access_status() -> ClaudeDesktopAccessStatus {
     }
 }
 
+/// Asks macOS for Accessibility access. The system prompt registers whichever
+/// binary is running right now, which matters because dooni is ad-hoc signed:
+/// every rebuild changes its signature, so a grant made against an earlier build
+/// no longer applies and the stale row in System Settings stays checked while
+/// `AXIsProcessTrusted` keeps reporting false.
+fn prompt_for_accessibility() -> bool {
+    let key = CFString::new("AXTrustedCheckOptionPrompt");
+    let options = CFDictionary::from_CFType_pairs(&[(key, CFBoolean::true_value())]);
+    // SAFETY: the dictionary outlives the call and the API only reads from it.
+    unsafe { AXIsProcessTrustedWithOptions(options.as_CFTypeRef() as *const c_void) != 0 }
+}
+
 pub fn open_claude_desktop_access() -> Result<()> {
     let status = if claude_desktop_access_status().installed {
+        if prompt_for_accessibility() {
+            return Ok(());
+        }
         Command::new("open")
             .arg("x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")
             .status()?
@@ -104,6 +128,75 @@ pub fn open_claude_desktop_access() -> Result<()> {
         return Err(anyhow!("could not open Claude Desktop setup"));
     }
     Ok(())
+}
+
+/// How long we keep re-asking Claude Desktop to expose its accessibility tree
+/// before we settle for polling whatever the app has built so far.
+const MANUAL_ACCESSIBILITY_DEADLINE: Duration = Duration::from_secs(5);
+
+struct ManualAccessibility {
+    pid: i32,
+    requested_at: Instant,
+    ready: bool,
+}
+
+static MANUAL_ACCESSIBILITY: OnceLock<Mutex<Option<ManualAccessibility>>> = OnceLock::new();
+
+fn manual_accessibility_cell() -> &'static Mutex<Option<ManualAccessibility>> {
+    MANUAL_ACCESSIBILITY.get_or_init(|| Mutex::new(None))
+}
+
+fn manual_accessibility_needs_request(ready: bool, elapsed: Duration) -> bool {
+    !ready && elapsed < MANUAL_ACCESSIBILITY_DEADLINE
+}
+
+/// Claude Desktop is an Electron app, and Chromium keeps its web-content
+/// accessibility tree switched off until an assistive client asks for it. Until
+/// then the focused window has no descendants, so the composer is invisible and
+/// no prompt is ever recorded. Setting `AXManualAccessibility` turns the tree on;
+/// building it is asynchronous, so we keep asking until the composer shows up or
+/// the deadline passes.
+fn request_manual_accessibility(application: CFTypeRef, pid: i32) {
+    let mut guard = manual_accessibility_cell()
+        .lock()
+        .unwrap_or_else(|error| error.into_inner());
+    let restarted = guard.as_ref().map(|state| state.pid != pid).unwrap_or(true);
+    if restarted {
+        *guard = Some(ManualAccessibility {
+            pid,
+            requested_at: Instant::now(),
+            ready: false,
+        });
+    }
+    let Some(state) = guard.as_ref() else {
+        return;
+    };
+    if !manual_accessibility_needs_request(state.ready, state.requested_at.elapsed()) {
+        return;
+    }
+    let attribute = CFString::new("AXManualAccessibility");
+    let enabled = CFBoolean::true_value();
+    // SAFETY: the element, attribute, and value are live CF objects for the
+    // duration of the call, and the setter does not take ownership of them.
+    unsafe {
+        AXUIElementSetAttributeValue(
+            application as *const c_void,
+            attribute.as_CFTypeRef() as *const c_void,
+            enabled.as_CFTypeRef(),
+        );
+    }
+}
+
+/// Records that the tree finished building, so we stop re-asking for it.
+fn note_manual_accessibility_ready(pid: i32) {
+    let mut guard = manual_accessibility_cell()
+        .lock()
+        .unwrap_or_else(|error| error.into_inner());
+    if let Some(state) = guard.as_mut() {
+        if state.pid == pid {
+            state.ready = true;
+        }
+    }
 }
 
 pub fn observe_frontmost_claude_desktop() -> Result<Option<ClaudeDesktopObservation>> {
@@ -135,6 +228,7 @@ fn observe_frontmost_claude_desktop_inner(
         return Ok(None);
     }
     let application = unsafe { CFType::wrap_under_create_rule(application_ref as CFTypeRef) };
+    request_manual_accessibility(application.as_CFTypeRef(), pid);
     let mut observation = ClaudeDesktopObservation {
         composer: None,
         conversation_id: None,
@@ -167,6 +261,9 @@ fn observe_frontmost_claude_desktop_inner(
             );
         }
         observation.composer = composer_candidate.map(|candidate| candidate.text);
+        if observation.composer.is_some() {
+            note_manual_accessibility_ready(pid);
+        }
         if scan_for_conversation_id {
             scan_accessibility_tree(window.as_CFTypeRef(), &mut observation, &mut 4_000usize);
         }
@@ -353,7 +450,34 @@ fn conversation_id_from_text(text: &str) -> Option<String> {
 /// Map the application that currently owns the menu bar to the surface values
 /// stored with chat sessions. The shortcut intentionally does nothing when it
 /// is pressed from an unrelated application.
+/// How long a frontmost-app reading stays good enough to reuse.
+const FRONTMOST_CACHE_MILLIS: u64 = 900;
+
+static FRONTMOST_CACHE: OnceLock<Mutex<Option<(Instant, Option<String>)>>> = OnceLock::new();
+
+/// The Claude Desktop observer polls at 350ms, and each `frontmost_chat_surface`
+/// call spawns an `osascript` process. Left uncached that is roughly three
+/// process launches a second for as long as dooni runs, which is far more
+/// expensive than the question deserves. Reuse a recent answer instead; being
+/// under a second stale only delays noticing an app switch by one poll.
 pub fn frontmost_chat_surface() -> Option<String> {
+    let cell = FRONTMOST_CACHE.get_or_init(|| Mutex::new(None));
+    if let Some((measured_at, cached)) = cell
+        .lock()
+        .unwrap_or_else(|error| error.into_inner())
+        .as_ref()
+    {
+        if measured_at.elapsed() < Duration::from_millis(FRONTMOST_CACHE_MILLIS) {
+            return cached.clone();
+        }
+    }
+    let surface = read_frontmost_chat_surface();
+    *cell.lock().unwrap_or_else(|error| error.into_inner()) =
+        Some((Instant::now(), surface.clone()));
+    surface
+}
+
+fn read_frontmost_chat_surface() -> Option<String> {
     let name = run_osascript(
         r#"tell application "System Events"
     return name of first application process whose frontmost is true
@@ -786,6 +910,26 @@ mod tests {
         let prompt = composer_candidate_score("AXTextArea", "Message Claude", 0).unwrap();
         let search = composer_candidate_score("AXTextField", "Search", 80).unwrap();
         assert!(prompt > search);
+    }
+
+    #[test]
+    fn manual_accessibility_retries_until_ready_or_deadline() {
+        assert!(manual_accessibility_needs_request(
+            false,
+            Duration::from_secs(0)
+        ));
+        assert!(manual_accessibility_needs_request(
+            false,
+            MANUAL_ACCESSIBILITY_DEADLINE - Duration::from_millis(1)
+        ));
+        assert!(!manual_accessibility_needs_request(
+            false,
+            MANUAL_ACCESSIBILITY_DEADLINE
+        ));
+        assert!(!manual_accessibility_needs_request(
+            true,
+            Duration::from_secs(0)
+        ));
     }
 
     #[test]

@@ -207,7 +207,6 @@ function renderPrompts() {
       const remove = document.createElement("button");
       remove.className = "remove-line";
       remove.type = "button";
-      remove.title = "remove";
       remove.setAttribute("aria-label", "Remove prompt");
       remove.innerHTML = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8"></path></svg>';
       remove.addEventListener("click", async () => {

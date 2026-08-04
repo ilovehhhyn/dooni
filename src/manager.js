@@ -28,9 +28,23 @@ let codexStatus = { installed: false, authenticated: false };
 let claudeDesktopAccess = { installed: false, authorized: false };
 let settingsRefreshInFlight = false;
 
+const STATUS_VISIBLE_MILLIS = 3000;
+let statusTimer = null;
+
 function setStatus(message) {
+  if (statusTimer) {
+    window.clearTimeout(statusTimer);
+    statusTimer = null;
+  }
   els.status.textContent = message || "";
   els.status.classList.toggle("visible", !!message);
+  if (message) {
+    statusTimer = window.setTimeout(() => {
+      statusTimer = null;
+      els.status.textContent = "";
+      els.status.classList.remove("visible");
+    }, STATUS_VISIBLE_MILLIS);
+  }
 }
 
 function renderList() {

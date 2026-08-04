@@ -68,9 +68,20 @@ install_app() {
   trap 'rm -rf "$install_tmp"' EXIT HUP INT TERM
   ditto "$APP_SOURCE" "$install_tmp/$APP_NAME"
 
-  # Ad-hoc signing is free and is sufficient for a locally built application.
+  # Sign with a stable local identity so the app's designated requirement stays
+  # the same across rebuilds. Ad-hoc signing pins the requirement to the
+  # binary's code hash, which made macOS silently drop dooni's Accessibility
+  # permission every time it was rebuilt. Ad-hoc remains the fallback.
   if command -v codesign >/dev/null 2>&1; then
-    codesign --force --deep --sign - "$install_tmp/$APP_NAME" >/dev/null
+    signing_identity=$("$REPO_DIR/scripts/ensure-signing-identity.sh" || true)
+    if [ -n "$signing_identity" ]; then
+      codesign --force --deep \
+        --keychain "$HOME/Library/Keychains/dooni-signing.keychain-db" \
+        --sign "$signing_identity" "$install_tmp/$APP_NAME" >/dev/null
+      printf 'Signed with the local dooni identity; Accessibility permission persists across rebuilds.\n'
+    else
+      codesign --force --deep --sign - "$install_tmp/$APP_NAME" >/dev/null
+    fi
   fi
 
   mkdir -p "$HOME/Applications"

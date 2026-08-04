@@ -72,8 +72,14 @@ textarea:focus-visible,
   flex-direction: column;
   align-items: center;
   justify-content: center;
+  /* `safe` keeps the content from being clipped past the top edge when the
+     window is too short for it. Browsers that don't support the keyword drop
+     this line and fall back to the plain `center` above. */
+  justify-content: safe center;
   gap: 14px;
   padding: 24px;
+  box-sizing: border-box;
+  overflow-y: auto;
 }
 
 .blob { width: 42px; height: 42px; position: relative; flex: 0 0 auto; }
@@ -157,6 +163,9 @@ textarea:focus-visible,
   width: 100%;
 }
 #ob-error { min-height: 16px; font-size: var(--font-meta); line-height: 16px; text-align: center; }
+/* An empty error slot still reserved its min-height and the column gap, which
+   pushed the visible content above the true centre. */
+#ob-error:empty { display: none; }
 
 .session-app {
   position: relative;
@@ -273,8 +282,11 @@ textarea:focus-visible,
 .editable-text { min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; border-radius: 3px; }
 .editable-text:focus { outline: 0; background: #fff; box-shadow: 0 0 0 3px #fff; }
 .remove-line {
-  width: 30px;
-  height: 30px;
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 18px;
+  height: 18px;
   display: grid;
   place-items: center;
   padding: 0;
@@ -282,14 +294,14 @@ textarea:focus-visible,
   color: var(--muted);
   background: transparent;
   border: 0;
-  border-radius: 8px;
+  border-radius: 6px;
   cursor: pointer;
 }
 .remove-line:hover,
 .remove-line:focus-visible { color: var(--ink); background: var(--paper); opacity: 1; }
 .remove-line svg {
-  width: 16px;
-  height: 16px;
+  width: 10px;
+  height: 10px;
   fill: none;
   stroke: currentColor;
   stroke-width: 1.4;
@@ -309,7 +321,7 @@ li:hover > .remove-line { opacity: 1; }
 }
 .prompt-composer {
   display: flex;
-  align-items: flex-end;
+  align-items: flex-start;
   gap: 8px;
   flex: 0 0 auto;
   margin-top: 10px;
@@ -320,7 +332,8 @@ li:hover > .remove-line { opacity: 1; }
 .composer-check {
   width: 14px;
   height: 14px;
-  margin-bottom: 2px;
+  /* Matches .prompt-check so the circle tracks the first typed line. */
+  margin-top: 2.5px;
   flex: 0 0 auto;
   background: transparent;
   border: 1px solid #b8b8b8;
@@ -343,9 +356,12 @@ li:hover > .remove-line { opacity: 1; }
 }
 .prompt-composer textarea::placeholder { color: #a3a3a3; }
 .prompt-item {
+  position: relative;
   display: grid;
-  grid-template-columns: 14px 1fr 30px;
-  align-items: center;
+  /* No third column: the remove control is positioned over the corner instead
+     of reserving width, so a prompt's text can use the full box. */
+  grid-template-columns: 14px 1fr;
+  align-items: start;
   gap: 6px;
   padding: 8px 10px;
   background: var(--soft);
@@ -353,8 +369,12 @@ li:hover > .remove-line { opacity: 1; }
   line-height: 19px;
 }
 .prompt-check {
-  width: 14px; height: 14px; margin-top: 0; color: white; background: transparent;
+  width: 14px; height: 14px; color: white; background: transparent;
   border: 1px solid #8a8a8a; border-radius: 50%; cursor: pointer; font-size: 9px; line-height: 12px;
+  /* Sit on the first line of text rather than the middle of a wrapped prompt:
+     half the difference between the 19px line box and the 14px circle. */
+  margin-top: 2.5px;
+  flex: 0 0 auto;
 }
 .prompt-item.done .prompt-check { background: var(--ink); border-color: var(--ink); }
 .prompt-item.done .editable-text { color: #a3a3a3; text-decoration: line-through; }
