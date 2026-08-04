@@ -1,33 +1,14 @@
 # dooni
 
-a small desktop companion for tracking your Codex and Claude coding chats, keeping a running memo of each session (Claude Code, Codex CLI). 
+a small desktop memo for tracking your codex and claude coding chats, keeping a running list of your prompts & space for jotting down thoughts of each session across terminal and app.
 
-long chats accumulate twists and turns that could fleet your mind; but don't fret! 
-
-dooni keeps a persistent, glanceable running list so you never lose the thread.
-
-## What it does
-
-- After signup, dooni shows one chat list.
-- Each launch begins with an empty chat list. A Codex, Claude, or terminal chat is admitted only after its first new user turn after dooni launches.
-- The list retains at most the 20 newest admitted chats. Older entries and their windows are removed.
-- On first admission, the selected runtime is asked what the chat is about, reads bounded chat content, and generates a descriptive title. Titles are limited to 180 characters and stop at a word boundary. Repository names are no longer prefixed to titles. Each list entry shows a metadata line of `repository or folder name | coding agent` when a project name is available, and only the coding agent otherwise. Titles are reconsidered after every five substantive user prompts unless you rename a chat manually, which locks its title.
-- Notes windows open only from the open icon, and they are not pinned by default.
-- Each note has two tabs:
-  - **Future prompts**: the first and default tab. These are prompts you write yourself. They are editable and checkable. Enter adds a prompt, and Command/Control+Enter inserts a newline.
-  - **Asked**: the second tab. It contains your source prompts after removing generated file-attachment scaffolding, internal context, and continuation-only messages. Prompts are grouped by the source prompt timestamp in your local calendar day, and each new day starts with a date label and a subtle separator line.
-- AI is used only to generate titles and to classify continuation-only prompts.
-- The interface is white monochrome. The blob appears during signup only, with no castle and no post-signup branding.
-
-## Keyboard shortcut
-
-Command-Shift-D is a global macOS shortcut. From Codex, Claude, or a terminal, it opens or focuses the most recently active surfaced dooni window for that surface. Terminal matching is best effort. The shortcut is also documented in Settings.
+dooni is your pensive so you never lose a thread!
 
 ## Install
 
 Requirements: macOS, Node 18+, Rust stable, Xcode command line tools.
 
-The backend is Rust, so you need the Rust toolchain. If you don't have it:
+You need the Rust toolchain:
 
 ```sh
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
@@ -43,10 +24,8 @@ cd dooni
 ./dooni install
 ```
 
-dooni is free. The app is not notarized. It is signed on your machine with a
-local self-signed identity that the installer creates once, so macOS keeps the
-Accessibility permission you grant it across rebuilds. Ad-hoc signing is used as
-a fallback if that identity cannot be created.
+dooni is free. your macOS keeps the
+Accessibility permission you grant it across rebuilds. 
 
 ### Claude app tracking
 
@@ -57,6 +36,22 @@ and waits up to five seconds for it to build. Claude Code and Codex CLI chats ar
 read from their history files instead and need no permission.
 
 Codex runtime authentication is the default, so you do not need an API key to start. The Anthropic runtime is optional.
+
+## How to use
+- after installation, onboard yourself 
+- after signup, dooni shows an empty list. as soon as you talk to any codex or claude agent, your chat will surface on the list. quitting the app does not clear history
+- you can retitle the chat by clicking the pencil icon
+- you can go to the chat specific memo pad by clicking on the title
+- on each memo page, there are two tabs: thoughts and asked.
+  - thoughts is future prompts, which is where you can keep track of all the prompts you can't yet queue or thoughts you can't yet ask in a side chat. after you enter these prompts for safekeeping, click to copy, or click on the circle to check it off, or delete, or edit.
+  - asked contains your historical prompts. click on any of them to be directed to the original chat interface and where the prompt appriximately was.
+- the list retains at most the 20 newest admitted chats; older entries and their windows are removed.
+- the windows are not pinned by default but you can click the top left circle to pin.
+- AI is used only to generate titles and to classify continuation-only prompts.
+  
+## Keyboard shortcut
+
+`Command-Shift-D` is a global macOS shortcut such that from Codex, Claude, or a terminal, it opens the most recently active surfaced dooni memo pad for that chat, so you can retrace your steps or jot down a new prompt. The shortcut is also documented in Settings.
 
 ## How to change settings
 
@@ -70,10 +65,6 @@ Edit that file directly, or use `jq` as shown below. **Restart dooni for changes
 ```sh
 CFG=~/Library/Application\ Support/dooni/config.json
 ```
-
-### How to change default memo mode
-
-There is no memo mode to change. The curt and default memo modes were removed, along with the mode toggle. Asked now always shows your source prompts after removing generated file-attachment scaffolding, internal context, and continuation-only messages.
 
 ### How to update API key
 

@@ -191,7 +191,7 @@ textarea:focus-visible,
   overflow-wrap: anywhere;
 }
 
-.tabs { display: flex; gap: 4px; padding: 0 12px 8px; }
+.tabs { display: flex; justify-content: flex-end; gap: 4px; padding: 0 12px 8px; }
 .tab {
   min-height: 30px;
   padding: 4px 8px;
@@ -281,11 +281,23 @@ textarea:focus-visible,
   flex: 1;
   background: var(--line);
 }
-.editable-text { min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; border-radius: 3px; }
-.editable-text:focus { outline: 0; background: #fff; box-shadow: 0 0 0 3px #fff; }
-.remove-line {
+.prompt-text {
+  min-width: 0;
+  padding-right: 4px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  border-radius: 3px;
+  cursor: copy;
+}
+.prompt-text.editing {
+  outline: 0;
+  background: #fff;
+  box-shadow: 0 0 0 3px #fff;
+  cursor: text;
+}
+.remove-line,
+.edit-line {
   position: absolute;
-  top: 3px;
   right: 3px;
   width: 18px;
   height: 18px;
@@ -299,17 +311,26 @@ textarea:focus-visible,
   border-radius: 6px;
   cursor: pointer;
 }
+.remove-line { top: 3px; }
+.edit-line { bottom: 3px; }
 .remove-line:hover,
-.remove-line:focus-visible { color: var(--ink); background: var(--paper); opacity: 1; }
-.remove-line svg {
+.remove-line:focus-visible,
+.edit-line:hover,
+.edit-line:focus-visible { color: var(--ink); background: var(--paper); opacity: 1; }
+.remove-line svg,
+.edit-line svg {
   width: 10px;
   height: 10px;
   fill: none;
   stroke: currentColor;
   stroke-width: 1.4;
   stroke-linecap: round;
+  stroke-linejoin: round;
 }
-li:hover > .remove-line { opacity: 1; }
+.prompt-item:hover > .remove-line,
+.prompt-item:hover > .edit-line,
+.prompt-item:focus-within > .remove-line,
+.prompt-item:focus-within > .edit-line { opacity: 1; }
 
 #panel-future.active {
   display: flex;
@@ -324,7 +345,7 @@ li:hover > .remove-line { opacity: 1; }
 .prompt-composer {
   display: flex;
   align-items: flex-start;
-  gap: 8px;
+  gap: 16px;
   flex: 0 0 auto;
   margin-top: 10px;
   padding: 10px 12px;
@@ -362,10 +383,11 @@ li:hover > .remove-line { opacity: 1; }
   display: grid;
   /* No third column: the remove control is positioned over the corner instead
      of reserving width, so a prompt's text can use the full box. */
-  grid-template-columns: 14px 1fr;
+  grid-template-columns: 14px minmax(0, 1fr);
   align-items: start;
-  gap: 6px;
-  padding: 8px 10px;
+  gap: 18px;
+  min-height: 44px;
+  padding: 12px 30px 12px 10px;
   background: var(--soft);
   border-radius: 10px;
   line-height: 19px;
@@ -379,7 +401,7 @@ li:hover > .remove-line { opacity: 1; }
   flex: 0 0 auto;
 }
 .prompt-item.done .prompt-check { background: var(--ink); border-color: var(--ink); }
-.prompt-item.done .editable-text { color: #a3a3a3; text-decoration: line-through; }
+.prompt-item.done .prompt-text { color: #a3a3a3; text-decoration: line-through; }
 
 .status-toast {
   position: absolute;

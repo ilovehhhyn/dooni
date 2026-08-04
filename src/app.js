@@ -84,20 +84,73 @@ function setupLockButton() {
   });
 }
 
-function editableText(text, onSave) {
+async function copyText(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch (_) {
+    const fallback = document.createElement("textarea");
+    fallback.value = text;
+    fallback.setAttribute("readonly", "");
+    fallback.style.position = "fixed";
+    fallback.style.opacity = "0";
+    document.body.appendChild(fallback);
+    fallback.select();
+    const copied = document.execCommand("copy");
+    fallback.remove();
+    if (!copied) throw new Error("clipboard unavailable");
+  }
+}
+
+function promptText(text, onSave) {
   const value = document.createElement("span");
-  value.className = "editable-text";
-  value.contentEditable = "true";
+  value.className = "prompt-text";
+  value.setAttribute("role", "button");
+  value.setAttribute("aria-label", "Copy thought");
+  value.tabIndex = 0;
   value.spellcheck = true;
   value.textContent = text;
+
+  const copy = async () => {
+    if (value.isContentEditable) return;
+    try {
+      await copyText(value.textContent);
+      setStatus("copied");
+      window.setTimeout(() => setStatus(""), 1200);
+    } catch (error) {
+      setStatus(`copy error: ${error}`);
+    }
+  };
+  value.addEventListener("click", copy);
   value.addEventListener("keydown", (event) => {
-    if (event.key === "Enter") {
+    if (value.isContentEditable && event.key === "Enter") {
       event.preventDefault();
       value.blur();
+    } else if (!value.isContentEditable && (event.key === "Enter" || event.key === " ")) {
+      event.preventDefault();
+      copy();
     }
   });
-  value.addEventListener("blur", () => onSave(value.textContent.trim(), value));
+  value.addEventListener("blur", () => {
+    if (!value.isContentEditable) return;
+    value.contentEditable = "false";
+    value.classList.remove("editing");
+    value.setAttribute("role", "button");
+    value.setAttribute("aria-label", "Copy thought");
+    value.tabIndex = 0;
+    onSave(value.textContent.trim(), value);
+  });
   return value;
+}
+
+function beginPromptEdit(value) {
+  if (value.isContentEditable) return;
+  value.contentEditable = "true";
+  value.classList.add("editing");
+  value.removeAttribute("role");
+  value.removeAttribute("aria-label");
+  value.removeAttribute("tabindex");
+  value.focus();
+  document.execCommand("selectAll", false, null);
 }
 
 async function persistPrompts() {
@@ -194,7 +247,7 @@ function renderPrompts() {
         try { await persistPrompts(); } catch (error) { setStatus(`save error: ${error}`); }
       });
 
-      const text = editableText(prompt.text, async (next, target) => {
+      const text = promptText(prompt.text, async (next, target) => {
         if (!next) {
           futurePrompts.splice(index, 1);
           renderPrompts();
@@ -204,6 +257,13 @@ function renderPrompts() {
         }
         try { await persistPrompts(); } catch (error) { setStatus(`save error: ${error}`); }
       });
+
+      const edit = document.createElement("button");
+      edit.className = "edit-line";
+      edit.type = "button";
+      edit.setAttribute("aria-label", "Edit thought");
+      edit.innerHTML = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M12.6 2.6a2 2 0 0 1 2.8 2.8L6 14.8l-4 .9.9-4L12.6 2.6zM10.8 4.4l2.8 2.8"></path></svg>';
+      edit.addEventListener("click", () => beginPromptEdit(text));
 
       const remove = document.createElement("button");
       remove.className = "remove-line";
@@ -216,7 +276,7 @@ function renderPrompts() {
         try { await persistPrompts(); } catch (error) { setStatus(`save error: ${error}`); }
       });
 
-      item.append(check, text, remove);
+      item.append(check, text, remove, edit);
       els.prompts.appendChild(item);
     });
   }
