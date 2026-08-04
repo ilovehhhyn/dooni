@@ -11,7 +11,9 @@ mod watcher;
 
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
-use tauri::Manager;
+use tauri::{Emitter, Manager};
+
+const MAX_FUTURE_PROMPTS: usize = 100;
 
 #[derive(Default)]
 pub struct AppState {
@@ -62,7 +64,7 @@ fn save_future_prompts(
             p.text = p.text.trim().to_string();
             (!p.text.is_empty()).then_some(p)
         })
-        .take(100)
+        .take(MAX_FUTURE_PROMPTS)
         .collect();
     let mut map = state.session_meta.lock().unwrap();
     let Some(meta) = map.get_mut(&session_id) else {
@@ -284,21 +286,91 @@ fn show_shortcut_session(app: &tauri::AppHandle) {
         return;
     };
     let state = app.state::<Arc<AppState>>();
-    let surfaced = state.surfaced_sessions.lock().unwrap().clone();
-    let session_id = state
-        .session_meta
-        .lock()
-        .unwrap()
-        .values()
-        .filter(|session| surfaced.contains(&session.session_id) && session.surface == surface)
-        .max_by_key(|session| session.last_active)
-        .map(|session| session.session_id.clone());
-
-    if let Some(session_id) = session_id {
+    if let Some(session_id) = shortcut_session_id(&state, &surface, None) {
         if let Err(error) = open_session_window(app, &session_id) {
             eprintln!("[dooni] shortcut window error: {error}");
         }
     }
+}
+
+fn shortcut_session_id(
+    state: &Arc<AppState>,
+    surface: &str,
+    conversation_id: Option<&str>,
+) -> Option<String> {
+    let surfaced = state.surfaced_sessions.lock().unwrap().clone();
+    let sessions = state.session_meta.lock().unwrap();
+    if let Some(conversation_id) = conversation_id {
+        if let Some(session) = sessions.values().find(|session| {
+            surfaced.contains(&session.session_id)
+                && session.surface == surface
+                && session.source_conversation_id.as_deref() == Some(conversation_id)
+        }) {
+            return Some(session.session_id.clone());
+        }
+    }
+    sessions
+        .values()
+        .filter(|session| surfaced.contains(&session.session_id) && session.surface == surface)
+        .max_by_key(|session| session.last_active)
+        .map(|session| session.session_id.clone())
+}
+
+fn capture_selection_as_thought(app: &tauri::AppHandle) -> Result<(), String> {
+    let surface = focus::fresh_frontmost_chat_surface()
+        .ok_or_else(|| "open a Codex, Claude, or terminal chat first".to_string())?;
+    let conversation_id = if surface == "claude-app" {
+        focus::observe_frontmost_claude_desktop_with_id()
+            .ok()
+            .flatten()
+            .and_then(|observation| observation.conversation_id)
+    } else {
+        None
+    };
+    let state = app.state::<Arc<AppState>>();
+    let session_id = shortcut_session_id(&state, &surface, conversation_id.as_deref())
+        .ok_or_else(|| "this chat has not surfaced in dooni yet".to_string())?;
+    let Some(text) = focus::selected_text_from_frontmost().map_err(|error| error.to_string())?
+    else {
+        return Ok(());
+    };
+
+    let captured_prompt_id = format!(
+        "captured-{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos()
+    );
+    let future_prompts = {
+        let mut sessions = state.session_meta.lock().unwrap();
+        let session = sessions
+            .get_mut(&session_id)
+            .ok_or_else(|| "session is no longer tracked".to_string())?;
+        if session.future_prompts.len() >= MAX_FUTURE_PROMPTS {
+            return Err("this chat already has 100 thoughts".to_string());
+        }
+        session.future_prompts.push(session_store::FuturePrompt {
+            id: captured_prompt_id.clone(),
+            text,
+            done: false,
+        });
+        let future_prompts = session.future_prompts.clone();
+        session_store::save(&sessions).map_err(|error| error.to_string())?;
+        future_prompts
+    };
+
+    let label = sessions::window_label_for(&session_id);
+    let _ = app.emit_to(
+        label.as_str(),
+        "future-prompts-updated",
+        serde_json::json!({
+            "session_id": session_id,
+            "future_prompts": future_prompts,
+            "captured_prompt_id": captured_prompt_id,
+        }),
+    );
+    Ok(())
 }
 
 fn main() {
@@ -337,6 +409,12 @@ fn main() {
                         && shortcut.matches(Modifiers::SUPER | Modifiers::SHIFT, Code::KeyD)
                     {
                         show_shortcut_session(app);
+                    } else if event.state == ShortcutState::Pressed
+                        && shortcut.matches(Modifiers::SUPER | Modifiers::SHIFT, Code::KeyY)
+                    {
+                        if let Err(error) = capture_selection_as_thought(app) {
+                            eprintln!("[dooni] capture shortcut error: {error}");
+                        }
                     }
                 })
                 .build(),
@@ -363,6 +441,9 @@ fn main() {
             use tauri_plugin_global_shortcut::GlobalShortcutExt;
             if let Err(error) = app.global_shortcut().register("CmdOrCtrl+Shift+D") {
                 eprintln!("[dooni] could not register Cmd+Shift+D: {error}");
+            }
+            if let Err(error) = app.global_shortcut().register("CmdOrCtrl+Shift+Y") {
+                eprintln!("[dooni] could not register Cmd+Shift+Y: {error}");
             }
 
             let handle = app.handle().clone();

@@ -24,10 +24,11 @@ use std::ffi::c_void;
 use std::io::Write;
 use std::process::{Command, Stdio};
 use std::sync::{Mutex, OnceLock};
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 const CG_HID_EVENT_TAP: u32 = 0;
 const CG_EVENT_FLAG_COMMAND: u64 = 1 << 20;
+const KEY_C: u16 = 8;
 const KEY_F: u16 = 3;
 const KEY_V: u16 = 9;
 const KEY_ESCAPE: u16 = 53;
@@ -477,6 +478,16 @@ pub fn frontmost_chat_surface() -> Option<String> {
     surface
 }
 
+/// Read the frontmost app without the observer cache. Shortcut handlers use
+/// this so a recent app switch cannot associate an action with the old surface.
+pub fn fresh_frontmost_chat_surface() -> Option<String> {
+    let surface = read_frontmost_chat_surface();
+    let cell = FRONTMOST_CACHE.get_or_init(|| Mutex::new(None));
+    *cell.lock().unwrap_or_else(|error| error.into_inner()) =
+        Some((Instant::now(), surface.clone()));
+    surface
+}
+
 fn read_frontmost_chat_surface() -> Option<String> {
     let name = run_osascript(
         r#"tell application "System Events"
@@ -508,6 +519,120 @@ end tell"#,
         return Some("terminal".to_string());
     }
     None
+}
+
+/// Capture the current selection without moving focus away from the source
+/// chat. Accessibility is non-destructive; Command-C is a compatibility
+/// fallback whose temporary clipboard marker is replaced with the prior text.
+pub fn selected_text_from_frontmost() -> Result<Option<String>> {
+    if !accessibility_enabled() {
+        let _ = prompt_for_accessibility();
+        return Err(anyhow!(
+            "allow dooni in Accessibility to capture selected text"
+        ));
+    }
+    if let Some(text) = selected_text_via_accessibility()? {
+        return Ok(Some(text));
+    }
+    selected_text_via_copy()
+}
+
+fn selected_text_via_accessibility() -> Result<Option<String>> {
+    let pid = run_osascript(
+        r#"tell application "System Events"
+    return unix id of first application process whose frontmost is true
+end tell"#,
+    )?
+    .trim()
+    .parse::<i32>()
+    .map_err(|_| anyhow!("could not identify the frontmost app"))?;
+
+    // SAFETY: AXUIElementCreateApplication returns an owned CF object for a
+    // live PID. CFType assumes ownership and releases it when dropped.
+    let application_ref = unsafe { AXUIElementCreateApplication(pid) };
+    if application_ref.is_null() {
+        return Ok(None);
+    }
+    let application = unsafe { CFType::wrap_under_create_rule(application_ref as CFTypeRef) };
+    request_manual_accessibility(application.as_CFTypeRef(), pid);
+
+    if let Some(focused) = ax_attribute(application.as_CFTypeRef(), "AXFocusedUIElement") {
+        let mut remaining = 300usize;
+        if let Some(text) = selected_text_in_tree(focused.as_CFTypeRef(), &mut remaining) {
+            return Ok(Some(text));
+        }
+    }
+    if let Some(window) = ax_attribute(application.as_CFTypeRef(), "AXFocusedWindow") {
+        let mut remaining = 2_000usize;
+        if let Some(text) = selected_text_in_tree(window.as_CFTypeRef(), &mut remaining) {
+            return Ok(Some(text));
+        }
+    }
+    Ok(None)
+}
+
+fn selected_text_in_tree(element: CFTypeRef, remaining: &mut usize) -> Option<String> {
+    if *remaining == 0 {
+        return None;
+    }
+    *remaining -= 1;
+    if let Some(text) = ax_string(element, "AXSelectedText").and_then(clean_selection) {
+        return Some(text);
+    }
+    let children = ax_attribute(element, "AXChildren")?.downcast::<CFArray>()?;
+    for child in children.iter() {
+        let child_ref = *child as CFTypeRef;
+        if !child_ref.is_null() {
+            if let Some(text) = selected_text_in_tree(child_ref, remaining) {
+                return Some(text);
+            }
+        }
+    }
+    None
+}
+
+fn selected_text_via_copy() -> Result<Option<String>> {
+    // Do not replace a non-text clipboard: pbpaste returning an error means we
+    // cannot faithfully restore what was there before the shortcut.
+    let Some(original) = read_clipboard_text()? else {
+        return Ok(None);
+    };
+    let nonce = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    let marker = format!("__dooni_no_selection_{nonce}__");
+    copy_to_clipboard(&marker)?;
+
+    let captured = (|| {
+        post_key(KEY_C, true)?;
+        std::thread::sleep(Duration::from_millis(180));
+        read_clipboard_text()
+    })();
+    let restored = copy_to_clipboard(&original);
+    if let Err(error) = restored {
+        return Err(error);
+    }
+    let Some(captured) = captured? else {
+        return Ok(None);
+    };
+    if captured == marker {
+        return Ok(None);
+    }
+    Ok(clean_selection(captured))
+}
+
+fn read_clipboard_text() -> Result<Option<String>> {
+    let output = Command::new("pbpaste").output()?;
+    if !output.status.success() {
+        return Ok(None);
+    }
+    Ok(Some(String::from_utf8_lossy(&output.stdout).to_string()))
+}
+
+fn clean_selection(text: String) -> Option<String> {
+    let text = text.trim();
+    (!text.is_empty()).then(|| text.to_string())
 }
 
 pub fn focus_chat_for(surface: &str, project_dir: Option<&str>) -> Result<bool> {
@@ -703,7 +828,7 @@ fn copy_to_clipboard(text: &str) -> Result<()> {
         .write_all(text.as_bytes())?;
     let status = child.wait()?;
     if !status.success() {
-        return Err(anyhow!("could not copy search text"));
+        return Err(anyhow!("could not write clipboard text"));
     }
     Ok(())
 }
@@ -903,6 +1028,15 @@ mod tests {
             .as_deref(),
             Some("77109920-2746-4688-8f72-741372e71d64")
         );
+    }
+
+    #[test]
+    fn captured_selections_trim_edges_but_keep_internal_lines() {
+        assert_eq!(
+            clean_selection("  first line\nsecond line  ".to_string()).as_deref(),
+            Some("first line\nsecond line")
+        );
+        assert_eq!(clean_selection("  \n  ".to_string()), None);
     }
 
     #[test]

@@ -283,16 +283,19 @@ function renderPrompts() {
   els.promptCount.textContent = futurePrompts.filter((prompt) => !prompt.done).length;
 }
 
+function activateTab(target) {
+  document.querySelectorAll(".tab").forEach((tab) => {
+    tab.classList.toggle("active", tab.dataset.tab === target);
+  });
+  document.querySelectorAll(".panel").forEach((panel) => {
+    panel.classList.toggle("active", panel.id === `panel-${target}`);
+  });
+  if (target === "future") requestAnimationFrame(() => els.promptInput.focus());
+}
+
 function setupTabs() {
   document.querySelectorAll(".tab").forEach((tab) => {
-    tab.addEventListener("click", () => {
-      const target = tab.dataset.tab;
-      document.querySelectorAll(".tab").forEach((item) => item.classList.toggle("active", item === tab));
-      document.querySelectorAll(".panel").forEach((panel) => {
-        panel.classList.toggle("active", panel.id === `panel-${target}`);
-      });
-      if (target === "future") requestAnimationFrame(() => els.promptInput.focus());
-    });
+    tab.addEventListener("click", () => activateTab(tab.dataset.tab));
   });
 }
 
@@ -350,6 +353,15 @@ async function initSession(invoke, listen) {
       : [];
     if (payload.title) els.memoTitle.textContent = payload.title;
     renderAskedPrompts();
+  });
+  await listen("future-prompts-updated", (event) => {
+    const payload = event.payload || {};
+    if (payload.session_id !== sessionId) return;
+    futurePrompts = Array.isArray(payload.future_prompts) ? payload.future_prompts : [];
+    renderPrompts();
+    activateTab("future");
+    setStatus("saved to thoughts");
+    window.setTimeout(() => setStatus(""), 1800);
   });
   chooseScreen();
   requestAnimationFrame(() => els.promptInput.focus());
