@@ -57,7 +57,7 @@ Codex runtime authentication is the default, so you do not need an API key to st
 
 - dooni reads the selection through macOS Accessibility first. If that fails, it falls back to a guarded `Command-C`, which restores your previous text clipboard afterward.
 - For Claude Desktop, dooni prefers the exact captured conversation ID. For Codex and terminal, it uses the most recently active surfaced session for that source.
-- The chat must already have surfaced, and each chat holds a maximum of 100 thoughts.
+- The chat does not need to have surfaced yet: capture matches the current or latest session for the frontmost source, and a successful capture adds that session to the surfaced chats and updates the list immediately. `Command-Shift-D` still works only for chats that have already surfaced. Each chat holds a maximum of 100 thoughts.
 - An already-open memo updates immediately on the thoughts tab.
 
 Both shortcuts are also listed in Settings under Manual.
