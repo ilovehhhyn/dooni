@@ -410,7 +410,7 @@ fn main() {
                     {
                         show_shortcut_session(app);
                     } else if event.state == ShortcutState::Pressed
-                        && shortcut.matches(Modifiers::SUPER | Modifiers::SHIFT, Code::KeyX)
+                        && shortcut.matches(Modifiers::SUPER | Modifiers::SHIFT, Code::Space)
                     {
                         if let Err(error) = capture_selection_as_thought(app) {
                             eprintln!("[dooni] capture shortcut error: {error}");
@@ -442,8 +442,8 @@ fn main() {
             if let Err(error) = app.global_shortcut().register("CmdOrCtrl+Shift+D") {
                 eprintln!("[dooni] could not register Cmd+Shift+D: {error}");
             }
-            if let Err(error) = app.global_shortcut().register("Command+Shift+X") {
-                eprintln!("[dooni] could not register Command+Shift+X: {error}");
+            if let Err(error) = app.global_shortcut().register("Command+Shift+Space") {
+                eprintln!("[dooni] could not register Command+Shift+Space: {error}");
             }
 
             let handle = app.handle().clone();
