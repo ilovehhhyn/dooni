@@ -286,7 +286,7 @@ fn show_shortcut_session(app: &tauri::AppHandle) {
         return;
     };
     let state = app.state::<Arc<AppState>>();
-    if let Some(session_id) = shortcut_session_id(&state, &surface, None) {
+    if let Some(session_id) = shortcut_session_id(&state, &surface, None, true) {
         if let Err(error) = open_session_window(app, &session_id) {
             eprintln!("[dooni] shortcut window error: {error}");
         }
@@ -297,12 +297,13 @@ fn shortcut_session_id(
     state: &Arc<AppState>,
     surface: &str,
     conversation_id: Option<&str>,
+    surfaced_only: bool,
 ) -> Option<String> {
     let surfaced = state.surfaced_sessions.lock().unwrap().clone();
     let sessions = state.session_meta.lock().unwrap();
     if let Some(conversation_id) = conversation_id {
         if let Some(session) = sessions.values().find(|session| {
-            surfaced.contains(&session.session_id)
+            (!surfaced_only || surfaced.contains(&session.session_id))
                 && session.surface == surface
                 && session.source_conversation_id.as_deref() == Some(conversation_id)
         }) {
@@ -311,7 +312,10 @@ fn shortcut_session_id(
     }
     sessions
         .values()
-        .filter(|session| surfaced.contains(&session.session_id) && session.surface == surface)
+        .filter(|session| {
+            (!surfaced_only || surfaced.contains(&session.session_id))
+                && session.surface == surface
+        })
         .max_by_key(|session| session.last_active)
         .map(|session| session.session_id.clone())
 }
@@ -327,13 +331,18 @@ fn capture_selection_as_thought(app: &tauri::AppHandle) -> Result<(), String> {
     } else {
         None
     };
-    let state = app.state::<Arc<AppState>>();
-    let session_id = shortcut_session_id(&state, &surface, conversation_id.as_deref())
-        .ok_or_else(|| "this chat has not surfaced in dooni yet".to_string())?;
     let Some(text) = focus::selected_text_from_frontmost().map_err(|error| error.to_string())?
     else {
         return Ok(());
     };
+    let state = app.state::<Arc<AppState>>();
+    let session_id = shortcut_session_id(
+        &state,
+        &surface,
+        conversation_id.as_deref(),
+        false,
+    )
+    .ok_or_else(|| "dooni could not match the current chat".to_string())?;
 
     let captured_prompt_id = format!(
         "captured-{}",
@@ -359,6 +368,14 @@ fn capture_selection_as_thought(app: &tauri::AppHandle) -> Result<(), String> {
         session_store::save(&sessions).map_err(|error| error.to_string())?;
         future_prompts
     };
+    let newly_surfaced = state
+        .surfaced_sessions
+        .lock()
+        .unwrap()
+        .insert(session_id.clone());
+    if newly_surfaced {
+        watcher::emit_surfaced_sessions(app, &state);
+    }
 
     let label = sessions::window_label_for(&session_id);
     let _ = app.emit_to(
@@ -469,4 +486,50 @@ fn main() {
         })
         .run(tauri::generate_context!())
         .expect("dooni failed to launch");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn shortcut_session(id: &str, last_active: u64) -> session_store::SessionMeta {
+        serde_json::from_value(serde_json::json!({
+            "session_id": id,
+            "agent": "codex",
+            "title": id,
+            "jsonl_path": format!("/tmp/{id}.jsonl"),
+            "surface": "codex-app",
+            "last_active": last_active,
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn capture_shortcut_can_match_and_surface_a_cold_start_chat() {
+        let state = Arc::new(AppState::default());
+        state
+            .session_meta
+            .lock()
+            .unwrap()
+            .insert("older".to_string(), shortcut_session("older", 1));
+        state
+            .session_meta
+            .lock()
+            .unwrap()
+            .insert("current".to_string(), shortcut_session("current", 2));
+        state
+            .surfaced_sessions
+            .lock()
+            .unwrap()
+            .insert("older".to_string());
+
+        assert_eq!(
+            shortcut_session_id(&state, "codex-app", None, true).as_deref(),
+            Some("older")
+        );
+        assert_eq!(
+            shortcut_session_id(&state, "codex-app", None, false).as_deref(),
+            Some("current")
+        );
+    }
 }

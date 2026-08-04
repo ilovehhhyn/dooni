@@ -679,7 +679,7 @@ fn persist_prompt_history(
     }
 }
 
-fn emit_surfaced_sessions(app: &AppHandle, state: &Arc<AppState>) {
+pub(crate) fn emit_surfaced_sessions(app: &AppHandle, state: &Arc<AppState>) {
     let surfaced = state.surfaced_sessions.lock().unwrap().clone();
     let mut sessions = state
         .session_meta
