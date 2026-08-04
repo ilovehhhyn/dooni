@@ -10,8 +10,8 @@ const els = {
   status: document.getElementById("status"),
   asked: document.getElementById("asked-prompts"),
   askedPanel: document.getElementById("panel-asked"),
-  askedSearch: document.getElementById("asked-search"),
-  askedSearchRow: document.getElementById("asked-search-row"),
+  promptSearch: document.getElementById("prompt-search"),
+  promptSearchShell: document.getElementById("prompt-search-shell"),
   prompts: document.getElementById("future-prompts"),
   promptForm: document.getElementById("prompt-form"),
   promptInput: document.getElementById("prompt-input"),
@@ -25,8 +25,9 @@ let userName = "";
 let sessionId = null;
 let askedPrompts = [];
 let askedPromptTimestamps = [];
-let askedSearchQuery = "";
 let futurePrompts = [];
+let activeTab = "future";
+const promptSearchQueries = { future: "", asked: "" };
 const ONBOARDING_SUCCESS_MILLIS = 2000;
 
 function showScreen(name) {
@@ -167,7 +168,7 @@ async function persistPrompts() {
 function renderAskedPrompts() {
   els.asked.innerHTML = "";
   let previousDay = null;
-  const query = askedSearchQuery.trim().toLocaleLowerCase();
+  const query = promptSearchQueries.asked.trim().toLocaleLowerCase();
   askedPrompts.forEach((prompt, index) => {
     if (query && !prompt.toLocaleLowerCase().includes(query)) return;
     const day = promptDay(askedPromptTimestamps[index]);
@@ -268,8 +269,10 @@ function promptDay(timestamp) {
 
 function renderPrompts() {
   els.prompts.innerHTML = "";
+  const query = promptSearchQueries.future.trim().toLocaleLowerCase();
   if (futurePrompts.length) {
     futurePrompts.forEach((prompt, index) => {
+      if (query && !prompt.text.toLocaleLowerCase().includes(query)) return;
       const item = document.createElement("li");
       item.className = prompt.done ? "prompt-item done" : "prompt-item";
 
@@ -321,13 +324,18 @@ function renderPrompts() {
 }
 
 function activateTab(target) {
+  activeTab = target;
   document.querySelectorAll(".tab").forEach((tab) => {
     tab.classList.toggle("active", tab.dataset.tab === target);
   });
   document.querySelectorAll(".panel").forEach((panel) => {
     panel.classList.toggle("active", panel.id === `panel-${target}`);
   });
-  els.askedSearchRow.classList.toggle("hidden", target !== "asked");
+  const searchLabel = target === "asked" ? "Search asked prompts" : "Search thoughts";
+  els.promptSearch.value = promptSearchQueries[target];
+  els.promptSearch.placeholder = searchLabel;
+  els.promptSearch.setAttribute("aria-label", searchLabel);
+  els.promptSearchShell.classList.toggle("has-query", Boolean(promptSearchQueries[target].trim()));
   if (target === "future") requestAnimationFrame(() => els.promptInput.focus());
   if (target === "asked") {
     requestAnimationFrame(() => {
@@ -367,13 +375,20 @@ async function initSession(invoke, listen) {
   renderAskedPrompts();
   renderPrompts();
   setupTabs();
-  els.askedSearch.addEventListener("input", () => {
-    askedSearchQuery = els.askedSearch.value;
-    renderAskedPrompts();
-    requestAnimationFrame(() => {
-      if (askedSearchQuery.trim()) els.askedPanel.scrollTop = 0;
-      else scrollAskedToBottom();
-    });
+  els.promptSearch.addEventListener("input", () => {
+    const query = els.promptSearch.value;
+    promptSearchQueries[activeTab] = query;
+    els.promptSearchShell.classList.toggle("has-query", Boolean(query.trim()));
+    if (activeTab === "asked") {
+      renderAskedPrompts();
+      requestAnimationFrame(() => {
+        if (query.trim()) els.askedPanel.scrollTop = 0;
+        else scrollAskedToBottom();
+      });
+      return;
+    }
+    renderPrompts();
+    requestAnimationFrame(() => { els.prompts.scrollTop = 0; });
   });
 
   els.promptForm.addEventListener("submit", async (event) => {
