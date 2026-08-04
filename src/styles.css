@@ -58,12 +58,24 @@ textarea:focus-visible,
   stroke: currentColor;
   stroke-width: 1.4;
 }
-.icon-button[aria-pressed="true"] circle { fill: currentColor; }
+.dooni-pin-mark { shape-rendering: crispEdges; }
+.dooni-pin .dooni-pin-body {
+  fill: var(--paper);
+  stroke: var(--ink);
+  stroke-width: 1.25;
+  stroke-linejoin: miter;
+}
+.dooni-pin .dooni-pin-eyes {
+  fill: var(--ink);
+  stroke: none;
+}
+.dooni-pin[aria-pressed="true"] .dooni-pin-body { fill: var(--ink); }
+.dooni-pin[aria-pressed="true"] .dooni-pin-eyes { fill: var(--paper); }
 .lock-btn {
   position: fixed;
-  /* The 30px button's visual circle now shares the 20px title line's centre. */
+  /* The blob's visible left edge follows the 22px prompt-control grid line. */
   top: 7px;
-  left: 12px;
+  left: 15px;
   z-index: 1000;
 }
 

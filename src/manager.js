@@ -204,6 +204,7 @@ function setupPinButton() {
     pinned = !pinned;
     button.setAttribute("aria-pressed", String(pinned));
     button.title = pinned ? "Unpin window" : "Pin window";
+    button.setAttribute("aria-label", button.title);
     try {
       const api = window.__TAURI__.window;
       const getter = api.getCurrentWindow || api.getCurrent;

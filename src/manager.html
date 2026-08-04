@@ -9,9 +9,10 @@
 <body class="mgr-body">
   <header class="mgr-toolbar">
     <div class="toolbar-actions">
-      <button id="lock-btn" class="icon-button pin-button" type="button" title="Pin window" aria-label="Pin window" aria-pressed="false">
-        <svg viewBox="0 0 16 16" aria-hidden="true">
-          <circle cx="8" cy="8" r="5.5"></circle>
+      <button id="lock-btn" class="icon-button dooni-pin pin-button" type="button" title="Pin window" aria-label="Pin window" aria-pressed="false">
+        <svg class="dooni-pin-mark" viewBox="0 0 16 16" aria-hidden="true">
+          <path class="dooni-pin-body" d="M5 1h6v2h2v2h2v6h-2v2h-2v2H5v-2H3v-2H1V5h2V3h2Z"></path>
+          <path class="dooni-pin-eyes" d="M5 6h2v2H5zM9 6h2v2H9z"></path>
         </svg>
       </button>
       <button id="settings-btn" class="icon-button" type="button" title="Settings" aria-label="Open settings">
@@ -64,7 +65,7 @@
         <div><dt>chat title</dt><dd>surface the original chat</dd></div>
         <div><dt>open</dt><dd>open notes in a new window</dd></div>
         <div><dt>edit</dt><dd>rename and lock the title</dd></div>
-        <div><dt>circle</dt><dd>pin or unpin this window</dd></div>
+        <div><dt>pin</dt><dd>pin or unpin this window</dd></div>
       </dl>
     </div>
 

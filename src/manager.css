@@ -55,7 +55,7 @@
   width: 16px;
   height: 16px;
 }
-.pin-button[aria-pressed="true"] circle { fill: currentColor; }
+.pin-button { margin-left: 3px; }
 
 .mgr-main {
   flex: 1;

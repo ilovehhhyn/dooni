@@ -73,6 +73,7 @@ function setupLockButton() {
   const paint = () => {
     btn.setAttribute("aria-pressed", String(pinned));
     btn.title = pinned ? "Unpin window" : "Pin window";
+    btn.setAttribute("aria-label", btn.title);
   };
   paint();
   btn.addEventListener("click", async () => {
