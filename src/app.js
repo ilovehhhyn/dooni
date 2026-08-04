@@ -9,6 +9,9 @@ const screens = {
 const els = {
   status: document.getElementById("status"),
   asked: document.getElementById("asked-prompts"),
+  askedPanel: document.getElementById("panel-asked"),
+  askedSearch: document.getElementById("asked-search"),
+  askedSearchRow: document.getElementById("asked-search-row"),
   prompts: document.getElementById("future-prompts"),
   promptForm: document.getElementById("prompt-form"),
   promptInput: document.getElementById("prompt-input"),
@@ -22,6 +25,7 @@ let userName = "";
 let sessionId = null;
 let askedPrompts = [];
 let askedPromptTimestamps = [];
+let askedSearchQuery = "";
 let futurePrompts = [];
 const ONBOARDING_SUCCESS_MILLIS = 2000;
 
@@ -163,7 +167,9 @@ async function persistPrompts() {
 function renderAskedPrompts() {
   els.asked.innerHTML = "";
   let previousDay = null;
+  const query = askedSearchQuery.trim().toLocaleLowerCase();
   askedPrompts.forEach((prompt, index) => {
+    if (query && !prompt.toLocaleLowerCase().includes(query)) return;
     const day = promptDay(askedPromptTimestamps[index]);
     if (day.key !== previousDay) {
       const divider = document.createElement("li");
@@ -180,6 +186,9 @@ function renderAskedPrompts() {
     const text = document.createElement("span");
     text.className = "asked-prompt-text";
     text.textContent = prompt;
+
+    const actions = document.createElement("div");
+    actions.className = "asked-prompt-actions";
 
     const locate = document.createElement("button");
     locate.className = "locate-prompt";
@@ -204,10 +213,38 @@ function renderAskedPrompts() {
       }
     });
 
-    item.append(text, locate);
+    const expand = document.createElement("button");
+    expand.className = "expand-prompt";
+    expand.type = "button";
+    expand.hidden = true;
+    expand.title = "Show full prompt";
+    expand.setAttribute("aria-label", "Show full prompt");
+    expand.setAttribute("aria-expanded", "false");
+    expand.innerHTML = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4.5 6.25 3.5 3.5 3.5-3.5"></path></svg>';
+    expand.addEventListener("click", () => {
+      const isExpanded = text.classList.toggle("expanded");
+      item.classList.toggle("expanded", isExpanded);
+      expand.classList.toggle("expanded", isExpanded);
+      expand.setAttribute("aria-expanded", String(isExpanded));
+      expand.setAttribute("aria-label", isExpanded ? "Collapse prompt" : "Show full prompt");
+      expand.title = isExpanded ? "Collapse prompt" : "Show full prompt";
+    });
+
+    actions.append(locate, expand);
+    item.append(text, actions);
     els.asked.appendChild(item);
   });
   els.askedCount.textContent = askedPrompts.length;
+  requestAnimationFrame(updateAskedPromptDisclosures);
+}
+
+function updateAskedPromptDisclosures() {
+  els.asked.querySelectorAll(".asked-prompt").forEach((item) => {
+    const text = item.querySelector(".asked-prompt-text");
+    const expand = item.querySelector(".expand-prompt");
+    if (!text || !expand || text.classList.contains("expanded")) return;
+    expand.hidden = text.scrollHeight <= text.clientHeight + 1;
+  });
 }
 
 function promptDay(timestamp) {
@@ -290,7 +327,18 @@ function activateTab(target) {
   document.querySelectorAll(".panel").forEach((panel) => {
     panel.classList.toggle("active", panel.id === `panel-${target}`);
   });
+  els.askedSearchRow.classList.toggle("hidden", target !== "asked");
   if (target === "future") requestAnimationFrame(() => els.promptInput.focus());
+  if (target === "asked") {
+    requestAnimationFrame(() => {
+      updateAskedPromptDisclosures();
+      scrollAskedToBottom();
+    });
+  }
+}
+
+function scrollAskedToBottom() {
+  els.askedPanel.scrollTop = els.askedPanel.scrollHeight;
 }
 
 function setupTabs() {
@@ -319,6 +367,14 @@ async function initSession(invoke, listen) {
   renderAskedPrompts();
   renderPrompts();
   setupTabs();
+  els.askedSearch.addEventListener("input", () => {
+    askedSearchQuery = els.askedSearch.value;
+    renderAskedPrompts();
+    requestAnimationFrame(() => {
+      if (askedSearchQuery.trim()) els.askedPanel.scrollTop = 0;
+      else scrollAskedToBottom();
+    });
+  });
 
   els.promptForm.addEventListener("submit", async (event) => {
     event.preventDefault();
@@ -353,6 +409,9 @@ async function initSession(invoke, listen) {
       : [];
     if (payload.title) els.memoTitle.textContent = payload.title;
     renderAskedPrompts();
+    if (els.askedPanel.classList.contains("active")) {
+      requestAnimationFrame(scrollAskedToBottom);
+    }
   });
   await listen("future-prompts-updated", (event) => {
     const payload = event.payload || {};

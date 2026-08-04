@@ -191,6 +191,43 @@ textarea:focus-visible,
   overflow-wrap: anywhere;
 }
 
+.asked-search-row {
+  display: flex;
+  justify-content: flex-end;
+  padding: 0 12px 4px;
+}
+.asked-search {
+  width: min(172px, calc(100vw - 24px));
+  height: 26px;
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr);
+  align-items: center;
+  gap: 5px;
+  padding: 0 8px;
+  color: var(--muted);
+  background: var(--soft);
+  border-radius: 8px;
+}
+.asked-search svg {
+  width: 12px;
+  height: 12px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.35;
+  stroke-linecap: round;
+}
+.asked-search input {
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  color: var(--ink);
+  background: transparent;
+  border: 0;
+  outline: 0;
+  font-size: var(--font-meta);
+  line-height: 16px;
+}
+.asked-search input::placeholder { color: #969696; }
 .tabs { display: flex; justify-content: flex-end; gap: 4px; padding: 0 12px 8px; }
 .tab {
   min-height: 30px;
@@ -218,8 +255,8 @@ textarea:focus-visible,
 }
 .asked-list > .asked-prompt {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 30px;
-  align-items: center;
+  grid-template-columns: minmax(0, 1fr) 26px;
+  align-items: start;
   gap: 6px;
   padding: 8px 10px;
   background: var(--soft);
@@ -227,12 +264,29 @@ textarea:focus-visible,
   line-height: 19px;
 }
 .asked-prompt-text {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+  overflow: hidden;
 }
-.locate-prompt {
-  width: 30px;
-  height: 30px;
+.asked-prompt-text.expanded {
+  display: block;
+  overflow: visible;
+}
+.asked-prompt-actions {
+  min-height: 26px;
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+}
+.locate-prompt,
+.expand-prompt {
+  width: 26px;
+  height: 26px;
   display: grid;
   place-items: center;
   padding: 0;
@@ -242,27 +296,41 @@ textarea:focus-visible,
   border: 0;
   border-radius: 8px;
   cursor: pointer;
-  transition: opacity .12s ease;
+  transition: color .12s ease, opacity .12s ease, transform .12s ease;
 }
 .asked-prompt:hover .locate-prompt,
 .asked-prompt:focus-within .locate-prompt {
   opacity: 1;
 }
 .locate-prompt:hover,
-.locate-prompt:focus-visible {
+.locate-prompt:focus-visible,
+.expand-prompt:hover,
+.expand-prompt:focus-visible {
   color: var(--ink);
   background: var(--paper);
 }
 .locate-prompt:disabled { cursor: default; opacity: .35; }
-.locate-prompt svg {
-  width: 16px;
-  height: 16px;
+.locate-prompt svg,
+.expand-prompt svg {
+  width: 14px;
+  height: 14px;
   overflow: visible;
   fill: none;
   stroke: currentColor;
   stroke-width: 1.4;
   stroke-linecap: round;
   stroke-linejoin: round;
+}
+.expand-prompt {
+  flex: 0 0 auto;
+  opacity: 1;
+}
+.expand-prompt[hidden] { display: none; }
+.expand-prompt svg { transition: transform .12s ease; }
+.expand-prompt.expanded svg { transform: rotate(180deg); }
+.asked-prompt.expanded .asked-prompt-actions {
+  justify-content: flex-start;
+  gap: 2px;
 }
 .asked-day-divider {
   display: flex;

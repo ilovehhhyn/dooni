@@ -58,6 +58,16 @@
         <div class="title" id="memo-title">Untitled chat</div>
       </header>
 
+      <div id="asked-search-row" class="asked-search-row hidden">
+        <label class="asked-search">
+          <svg viewBox="0 0 16 16" aria-hidden="true">
+            <circle cx="7" cy="7" r="4.25"></circle>
+            <path d="m10.25 10.25 3 3"></path>
+          </svg>
+          <input id="asked-search" type="search" placeholder="Search asked" aria-label="Search asked prompts" autocomplete="off" spellcheck="false" />
+        </label>
+      </div>
+
       <nav class="tabs" aria-label="conversation notes">
         <button class="tab active" data-tab="future" type="button">
           thoughts <span id="prompt-count">0</span>
