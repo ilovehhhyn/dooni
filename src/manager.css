@@ -85,6 +85,8 @@
 .session-dot {
   width: 14px;
   height: 14px;
+  align-self: start;
+  margin-top: 3px;
   border: 1px solid var(--ink);
   border-radius: 50%;
   background: var(--paper);

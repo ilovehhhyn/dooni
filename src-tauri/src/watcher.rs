@@ -81,17 +81,26 @@ pub async fn run(app: AppHandle, state: Arc<AppState>) -> Result<()> {
             .collect::<Vec<_>>();
         refresh_session_meta(&active_paths, &app, &state);
 
+        // Put a newly active chat in the list before title generation runs.
+        // Runtime-backed review can take a while; its later metadata event will
+        // replace the temporary title without making the chat wait off-screen.
+        let newly_surfaced_ids = active_files
+            .iter()
+            .filter(|(_, newly_surfaced)| *newly_surfaced)
+            .map(|(path, _)| session_id_from_path(path))
+            .collect::<Vec<_>>();
+        if !newly_surfaced_ids.is_empty() {
+            let mut surfaced = state.surfaced_sessions.lock().unwrap();
+            for session_id in newly_surfaced_ids {
+                surfaced.insert(session_id);
+            }
+            drop(surfaced);
+            emit_surfaced_sessions(&app, &state);
+        }
+
         for (path, newly_surfaced) in active_files {
             let allow_ai_review = was_modified_within(&path, RECENT_WINDOW_SECS);
             match process_file(&path, &app, &state, allow_ai_review, newly_surfaced).await {
-                Ok(()) if newly_surfaced => {
-                    state
-                        .surfaced_sessions
-                        .lock()
-                        .unwrap()
-                        .insert(session_id_from_path(&path));
-                    emit_surfaced_sessions(&app, &state);
-                }
                 Ok(()) => {}
                 Err(error) => {
                     eprintln!(
@@ -331,8 +340,6 @@ async fn process_file(
             excluded_indexes.dedup();
 
             let reviewed_title = limit_title(&review.title);
-            let updated_title =
-                (!title_locked && reviewed_title != current_title).then_some(reviewed_title);
             let visible_prompts = visible_user_prompts(&all_user_prompts, &excluded_indexes);
             let visible_timestamps = visible_user_prompt_timestamps(
                 &all_user_prompts,
@@ -344,16 +351,24 @@ async fn process_file(
                 &all_user_prompt_locators,
                 &excluded_indexes,
             );
-            {
+            let updated_title = {
                 let mut metadata = state.session_meta.lock().unwrap();
                 if let Some(session) = metadata.get_mut(&session_id) {
-                    session.excluded_prompt_indexes = excluded_indexes;
+                    session.excluded_prompt_indexes = excluded_indexes.clone();
+                    let updated_title = automatic_title_update(
+                        &session.title,
+                        session.title_locked,
+                        &reviewed_title,
+                    );
                     if let Some(title) = updated_title.as_ref() {
                         session.title = title.clone();
                         session.title_ai_generated = true;
                     }
+                    updated_title
+                } else {
+                    None
                 }
-            }
+            };
             persist_prompt_history(
                 app,
                 state,
@@ -366,37 +381,58 @@ async fn process_file(
         }
         Err(error) => {
             eprintln!("[dooni] history review error: {error:?}");
-            if force_title_review && !title_locked {
+            if force_title_review {
                 let fallback = fallback_title(&all_user_prompts);
-                {
+                let updated_title = {
                     let mut metadata = state.session_meta.lock().unwrap();
                     if let Some(session) = metadata.get_mut(&session_id) {
-                        session.title = fallback.clone();
+                        let updated_title = automatic_title_update(
+                            &session.title,
+                            session.title_locked,
+                            &fallback,
+                        );
+                        if let Some(title) = updated_title.as_ref() {
+                            session.title = title.clone();
+                        }
+                        updated_title
+                    } else {
+                        None
                     }
+                };
+                if let Some(updated_title) = updated_title {
+                    persist_prompt_history(
+                        app,
+                        state,
+                        &session_id,
+                        visible_user_prompts(&all_user_prompts, &excluded_indexes),
+                        visible_user_prompt_timestamps(
+                            &all_user_prompts,
+                            &all_user_prompt_timestamps,
+                            &excluded_indexes,
+                        ),
+                        visible_user_prompt_locators(
+                            &all_user_prompts,
+                            &all_user_prompt_locators,
+                            &excluded_indexes,
+                        ),
+                        Some(updated_title),
+                    );
                 }
-                persist_prompt_history(
-                    app,
-                    state,
-                    &session_id,
-                    visible_user_prompts(&all_user_prompts, &excluded_indexes),
-                    visible_user_prompt_timestamps(
-                        &all_user_prompts,
-                        &all_user_prompt_timestamps,
-                        &excluded_indexes,
-                    ),
-                    visible_user_prompt_locators(
-                        &all_user_prompts,
-                        &all_user_prompt_locators,
-                        &excluded_indexes,
-                    ),
-                    Some(fallback),
-                );
             }
         }
     }
 
     emit_surfaced_sessions(app, state);
     Ok(())
+}
+
+fn automatic_title_update(
+    current_title: &str,
+    title_locked: bool,
+    candidate: &str,
+) -> Option<String> {
+    let candidate = limit_title(candidate);
+    (!title_locked && candidate != current_title).then_some(candidate)
 }
 
 fn user_prompt_data_from_turns(
@@ -944,6 +980,22 @@ mod tests {
         assert_eq!(t.text.trim(), "hello desktop");
         assert_eq!(t.timestamp.as_deref(), Some("2026-07-30T23:55:00Z"));
         assert_eq!(t.source_turn_id.as_deref(), Some("turn-123"));
+    }
+
+    #[test]
+    fn automatic_titles_never_replace_a_locked_manual_title() {
+        assert_eq!(
+            automatic_title_update("My title", true, "AI replacement"),
+            None
+        );
+    }
+
+    #[test]
+    fn automatic_titles_can_replace_an_unlocked_title() {
+        assert_eq!(
+            automatic_title_update("Temporary title", false, "Generated title").as_deref(),
+            Some("Generated title")
+        );
     }
 
     #[test]

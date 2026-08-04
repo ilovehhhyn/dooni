@@ -23,6 +23,7 @@ let sessionId = null;
 let askedPrompts = [];
 let askedPromptTimestamps = [];
 let futurePrompts = [];
+const ONBOARDING_SUCCESS_MILLIS = 2000;
 
 function showScreen(name) {
   for (const [key, el] of Object.entries(screens)) {
@@ -325,7 +326,7 @@ async function initMain(invoke, listen) {
       onboarded = true;
       userName = name;
       wiggle();
-      setTimeout(() => window.location.replace("manager.html"), 350);
+      setTimeout(() => window.location.replace("manager.html"), ONBOARDING_SUCCESS_MILLIS);
     } catch (saveError) {
       error.textContent = `save error: ${saveError}`;
     }

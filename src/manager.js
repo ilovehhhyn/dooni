@@ -27,6 +27,7 @@ let selectedRuntime = "codex";
 let codexStatus = { installed: false, authenticated: false };
 let claudeDesktopAccess = { installed: false, authorized: false };
 let settingsRefreshInFlight = false;
+let renamingSessionId = null;
 
 const STATUS_VISIBLE_MILLIS = 3000;
 let statusTimer = null;
@@ -48,6 +49,9 @@ function setStatus(message) {
 }
 
 function renderList() {
+  // Watcher updates can arrive while the user is typing. Rebuilding the list
+  // here would remove the contenteditable title and discard the rename.
+  if (renamingSessionId) return;
   els.list.innerHTML = "";
   if (!sessions.length) {
     const empty = document.createElement("li");
@@ -131,7 +135,8 @@ async function launchSession(sessionId) {
 }
 
 function beginRename(title, session) {
-  if (title.isContentEditable) return;
+  if (renamingSessionId || title.isContentEditable) return;
+  renamingSessionId = session.session_id;
   title.removeAttribute("role");
   title.removeAttribute("tabindex");
   title.contentEditable = "true";
@@ -158,6 +163,8 @@ function beginRename(title, session) {
     title.tabIndex = 0;
     if (!next || next === session.title) {
       title.textContent = session.title;
+      renamingSessionId = null;
+      renderList();
       return;
     }
     try {
@@ -166,10 +173,15 @@ function beginRename(title, session) {
         title: next,
       });
       session.title = updatedTitle;
+      const currentSession = sessions.find((item) => item.session_id === session.session_id);
+      if (currentSession) currentSession.title = updatedTitle;
       title.textContent = updatedTitle;
     } catch (error) {
       title.textContent = session.title;
       setStatus(`rename error: ${error}`);
+    } finally {
+      renamingSessionId = null;
+      renderList();
     }
   };
   title.addEventListener("keydown", handleKey);

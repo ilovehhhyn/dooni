@@ -61,25 +61,27 @@ textarea:focus-visible,
 .icon-button[aria-pressed="true"] circle { fill: currentColor; }
 .lock-btn {
   position: fixed;
-  top: 12px;
+  /* The 30px button's visual circle now shares the 20px title line's centre. */
+  top: 7px;
   left: 12px;
   z-index: 1000;
 }
 
+#screen-onboard {
+  height: 100vh;
+  width: 100vw;
+  display: grid;
+  place-items: center;
+  place-items: safe center;
+  padding: 24px;
+  overflow-y: auto;
+}
+
 .center {
-  height: 100%;
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  /* `safe` keeps the content from being clipped past the top edge when the
-     window is too short for it. Browsers that don't support the keyword drop
-     this line and fall back to the plain `center` above. */
-  justify-content: safe center;
   gap: 14px;
-  padding: 24px;
-  box-sizing: border-box;
-  overflow-y: auto;
 }
 
 .blob { width: 42px; height: 42px; position: relative; flex: 0 0 auto; }
@@ -98,7 +100,7 @@ textarea:focus-visible,
     6px 30px #000, 12px 30px #000, 18px 30px #000, 24px 30px #000, 30px 30px #000,
     12px 36px #000, 18px 36px #000, 24px 36px #000;
 }
-.blob.wiggle { animation: wiggle .6s steps(4, end); }
+.blob.wiggle { animation: wiggle .5s steps(4, end) 4; }
 @keyframes wiggle {
   0%, 100% { transform: translate(0) rotate(0); }
   25% { transform: translate(-2px, -1px) rotate(-6deg); }
@@ -106,7 +108,7 @@ textarea:focus-visible,
   75% { transform: translate(-1px, 1px) rotate(-3deg); }
 }
 
-.onboard-inner { gap: 10px; width: 100%; max-width: 300px; }
+.onboard-inner { gap: 10px; width: min(300px, 100%); }
 .onboard-title { margin-bottom: 4px; font-size: var(--font-title); font-weight: 600; line-height: 20px; }
 .onboard-inner label { display: flex; flex-direction: column; gap: 4px; font-size: 11px; width: 100%; color: var(--muted); }
 .onboard-inner input { min-height: 36px; border: 0; border-radius: 8px; padding: 8px 10px; color: var(--ink); background: var(--soft); }
@@ -176,7 +178,7 @@ textarea:focus-visible,
 }
 .session-header {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   min-height: 54px;
   padding: 12px 16px 8px 54px;
 }
