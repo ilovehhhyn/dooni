@@ -53,6 +53,15 @@ Codex runtime authentication is the default, so you do not need an API key to st
 
 `Command-Shift-D` is a global macOS shortcut such that from Codex, Claude, or a terminal, it opens the most recently active surfaced dooni memo pad for that chat, so you can retrace your steps or jot down a new prompt. The shortcut is also documented in Settings.
 
+`Command-Shift-Y` is a global macOS shortcut that saves the text you have selected in a Codex, Claude, or terminal chat into the associated surfaced dooni chat as a new thought. The capture is quiet, and an empty selection does nothing.
+
+- dooni reads the selection through macOS Accessibility first. If that fails, it falls back to a guarded `Command-C`, which restores your previous text clipboard afterward.
+- For Claude Desktop, dooni prefers the exact captured conversation ID. For Codex and terminal, it uses the most recently active surfaced session for that source.
+- The chat must already have surfaced, and each chat holds a maximum of 100 thoughts.
+- An already-open memo updates immediately on the thoughts tab.
+
+Both shortcuts are also listed in Settings under Manual.
+
 ## How to change settings
 
 All settings live in a JSON file:
