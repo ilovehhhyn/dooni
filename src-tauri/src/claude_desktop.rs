@@ -8,7 +8,6 @@ use std::time::{Duration, SystemTime};
 use tauri::{AppHandle, Emitter, Manager};
 
 const POLL_MILLIS: u64 = 350;
-const MAX_TRACKED_SESSIONS: usize = 20;
 
 #[derive(Clone)]
 struct Draft {
@@ -161,6 +160,7 @@ fn record_prompt(
                     "claude-desktop://{}",
                     conversation_id.as_deref().unwrap_or("active")
                 ),
+                history_bytes: 0,
                 source_conversation_id: conversation_id.clone(),
                 surface: "claude-app".to_string(),
                 last_active: now,
@@ -190,13 +190,13 @@ fn record_prompt(
         });
         prompts = entry.asked_prompts.clone();
 
-        if sessions.len() > MAX_TRACKED_SESSIONS {
+        if sessions.len() > session_store::MAX_TRACKED_SESSIONS {
             let mut by_age = sessions
                 .values()
                 .map(|session| (session.last_active, session.session_id.clone()))
                 .collect::<Vec<_>>();
             by_age.sort_by(|left, right| right.0.cmp(&left.0));
-            for (_, old_id) in by_age.into_iter().skip(MAX_TRACKED_SESSIONS) {
+            for (_, old_id) in by_age.into_iter().skip(session_store::MAX_TRACKED_SESSIONS) {
                 sessions.remove(&old_id);
                 removed.push(old_id);
             }

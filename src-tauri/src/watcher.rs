@@ -5,7 +5,7 @@ use crate::sessions::{
 };
 use crate::{AppState, Turn};
 use anyhow::Result;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
@@ -16,7 +16,6 @@ use tokio::io::{AsyncBufReadExt, AsyncSeekExt, BufReader};
 const TRIGGER_EVERY_N_USER_PROMPTS: usize = 5;
 const RECENT_WINDOW_SECS: u64 = 30 * 60; // consider files modified in the last 30 min as active
 const POLL_INTERVAL_SECS: u64 = 2;
-const MAX_TRACKED_SESSIONS: usize = 20;
 /// A session is "running" if its JSONL was touched this recently.
 const RUNNING_WINDOW_SECS: u64 = 3 * 60;
 
@@ -39,7 +38,14 @@ pub async fn run(app: AppHandle, state: Arc<AppState>) -> Result<()> {
         .collect();
 
     loop {
-        let files = collect_latest_files(&roots, MAX_TRACKED_SESSIONS);
+        // Always poll persisted histories, even when an older saved chat is no
+        // longer among the globally newest files. Recent unsurfaced files are
+        // included as candidates so a new user turn can still displace the
+        // oldest of the 20 retained chats.
+        let files = {
+            let persisted = state.session_meta.lock().unwrap();
+            collect_watch_files(&roots, &persisted)
+        };
         let mut active_files: Vec<(PathBuf, bool)> = Vec::new();
         for path in files {
             let session_id = session_id_from_path(&path);
@@ -62,10 +68,7 @@ pub async fn run(app: AppHandle, state: Arc<AppState>) -> Result<()> {
                 match appended_segment_has_user_turn(&path, previous_offset).await {
                     Ok(result) => result,
                     Err(error) => {
-                        eprintln!(
-                            "[dooni] skipping {} this pass: {error:?}",
-                            path.display()
-                        );
+                        eprintln!("[dooni] skipping {} this pass: {error:?}", path.display());
                         continue;
                     }
                 };
@@ -178,6 +181,29 @@ fn collect_latest_files(roots: &[PathBuf], max: usize) -> Vec<PathBuf> {
     out.into_iter().take(max).map(|(_, p)| p).collect()
 }
 
+fn collect_watch_files(
+    roots: &[PathBuf],
+    persisted: &HashMap<String, SessionMeta>,
+) -> Vec<PathBuf> {
+    let mut files = collect_latest_files(roots, session_store::MAX_TRACKED_SESSIONS);
+    let mut seen = files.iter().cloned().collect::<HashSet<_>>();
+    for session in persisted.values() {
+        if session.jsonl_path.starts_with("claude-desktop://") {
+            continue;
+        }
+        let path = PathBuf::from(&session.jsonl_path);
+        if path.is_file() && !is_background_agent(&path) && seen.insert(path.clone()) {
+            files.push(path);
+        }
+    }
+    files.sort_by(|left, right| {
+        let left_modified = left.metadata().and_then(|meta| meta.modified()).ok();
+        let right_modified = right.metadata().and_then(|meta| meta.modified()).ok();
+        right_modified.cmp(&left_modified)
+    });
+    files
+}
+
 fn was_modified_within(path: &Path, seconds: u64) -> bool {
     path.metadata()
         .and_then(|m| m.modified())
@@ -196,6 +222,13 @@ async fn process_file(
 ) -> Result<()> {
     let session_id = session_id_from_path(path);
     let path_key = path.to_string_lossy().to_string();
+    let persisted_history_bytes = state
+        .session_meta
+        .lock()
+        .unwrap()
+        .get(&session_id)
+        .map(|session| session.history_bytes)
+        .unwrap_or(0);
 
     let (offset, prev_user_count) = {
         let mut map = state.sessions.lock().unwrap();
@@ -208,7 +241,8 @@ async fn process_file(
     let size = meta.len();
     let truncated = size < offset;
     let offset = if truncated { 0 } else { offset };
-    if size == offset {
+    let source_replaced = truncated || (offset == 0 && size < persisted_history_bytes);
+    if size == offset && size == persisted_history_bytes {
         return Ok(());
     }
     file.seek(std::io::SeekFrom::Start(offset)).await?;
@@ -230,21 +264,23 @@ async fn process_file(
         }
     }
 
-    let user_added = new_turns
-        .iter()
-        .filter(|turn| turn.role == "user" && clean_user_prompt(&turn.text).is_some())
-        .count();
+    let user_added = count_new_user_prompts(
+        &new_turns,
+        offset == 0,
+        persisted_history_bytes,
+        source_replaced,
+    );
 
     let (turns_snapshot, should_review) = {
         let mut map = state.sessions.lock().unwrap();
         let s = map.entry(path_key.clone()).or_default();
-        if truncated {
+        if source_replaced {
             s.turns.clear();
             s.user_count_since_review = 0;
         }
         s.turns.extend(new_turns.into_iter());
         s.last_processed_offset = new_offset;
-        let previous_count = if truncated { 0 } else { prev_user_count };
+        let previous_count = if source_replaced { 0 } else { prev_user_count };
         s.user_count_since_review = previous_count.saturating_add(user_added);
         let trig = allow_ai_review
             && (force_title_review || s.user_count_since_review >= TRIGGER_EVERY_N_USER_PROMPTS);
@@ -269,7 +305,13 @@ async fn process_file(
             })
             .unwrap_or_else(|| (session_id.clone(), false, None, Vec::new()))
     };
-    if truncated {
+    {
+        let mut metadata = state.session_meta.lock().unwrap();
+        if let Some(session) = metadata.get_mut(&session_id) {
+            session.history_bytes = new_offset;
+        }
+    }
+    if source_replaced {
         excluded_indexes.clear();
         let mut metadata = state.session_meta.lock().unwrap();
         if let Some(session) = metadata.get_mut(&session_id) {
@@ -386,11 +428,8 @@ async fn process_file(
                 let updated_title = {
                     let mut metadata = state.session_meta.lock().unwrap();
                     if let Some(session) = metadata.get_mut(&session_id) {
-                        let updated_title = automatic_title_update(
-                            &session.title,
-                            session.title_locked,
-                            &fallback,
-                        );
+                        let updated_title =
+                            automatic_title_update(&session.title, session.title_locked, &fallback);
                         if let Some(title) = updated_title.as_ref() {
                             session.title = title.clone();
                         }
@@ -424,6 +463,26 @@ async fn process_file(
 
     emit_surfaced_sessions(app, state);
     Ok(())
+}
+
+fn count_new_user_prompts(
+    turns: &[Turn],
+    replaying_from_start: bool,
+    persisted_history_bytes: u64,
+    source_replaced: bool,
+) -> usize {
+    turns
+        .iter()
+        .filter(|turn| {
+            let after_persisted_history = !replaying_from_start
+                || persisted_history_bytes == 0
+                || source_replaced
+                || turn.history_position >= persisted_history_bytes;
+            after_persisted_history
+                && turn.role == "user"
+                && clean_user_prompt(&turn.text).is_some()
+        })
+        .count()
 }
 
 fn automatic_title_update(
@@ -500,9 +559,7 @@ fn clean_user_prompt(prompt: &str) -> Option<String> {
 /// `[Image #1]` marker that sits inside a real sentence is left alone, because
 /// removing it would edit the user's own words.
 fn is_image_attachment_scaffolding(line: &str) -> bool {
-    line.starts_with("[Image")
-        && line.ends_with(']')
-        && line.contains("source:")
+    line.starts_with("[Image") && line.ends_with(']') && line.contains("source:")
 }
 
 fn cleaned_turn(turn: &Turn) -> Option<Turn> {
@@ -744,6 +801,7 @@ fn refresh_session_meta(files: &[PathBuf], app: &AppHandle, state: &Arc<AppState
                     project_dir: project_dir.clone(),
                     project_name: project_name.clone(),
                     jsonl_path: jsonl_path.clone(),
+                    history_bytes: 0,
                     source_conversation_id: source_conversation_id.clone(),
                     surface: surface.clone(),
                     last_active: mtime,
@@ -788,13 +846,13 @@ fn refresh_session_meta(files: &[PathBuf], app: &AppHandle, state: &Arc<AppState
             }
         }
 
-        if map.len() > MAX_TRACKED_SESSIONS {
+        if map.len() > session_store::MAX_TRACKED_SESSIONS {
             let mut by_age: Vec<_> = map
                 .values()
                 .map(|m| (m.last_active, m.session_id.clone()))
                 .collect();
             by_age.sort_by(|a, b| b.0.cmp(&a.0));
-            for (_, old_id) in by_age.into_iter().skip(MAX_TRACKED_SESSIONS) {
+            for (_, old_id) in by_age.into_iter().skip(session_store::MAX_TRACKED_SESSIONS) {
                 map.remove(&old_id);
                 state.prompts_by_session.lock().unwrap().remove(&old_id);
                 removed_ids.push(old_id.clone());
@@ -1059,6 +1117,35 @@ mod tests {
     }
 
     #[test]
+    fn startup_replay_counts_only_prompts_appended_after_the_saved_offset() {
+        let turns = vec![
+            Turn {
+                role: "user".into(),
+                text: "already persisted".into(),
+                timestamp: None,
+                source_turn_id: None,
+                history_position: 10,
+            },
+            Turn {
+                role: "assistant".into(),
+                text: "answer".into(),
+                timestamp: None,
+                source_turn_id: None,
+                history_position: 60,
+            },
+            Turn {
+                role: "user".into(),
+                text: "added while Dooni was closed".into(),
+                timestamp: None,
+                source_turn_id: None,
+                history_position: 100,
+            },
+        ];
+        assert_eq!(count_new_user_prompts(&turns, true, 100, false), 1);
+        assert_eq!(count_new_user_prompts(&turns[..2], true, 100, false), 0);
+    }
+
+    #[test]
     fn removes_generated_file_attachment_scaffolding() {
         let prompt = r#"Please keep this part.
 
@@ -1198,7 +1285,11 @@ Change the launch icon.
             .append(true)
             .open(&path)
             .unwrap();
-        writeln!(file, "{{\"role\":\"user\",\"content\":\"now a real prompt\"}}").unwrap();
+        writeln!(
+            file,
+            "{{\"role\":\"user\",\"content\":\"now a real prompt\"}}"
+        )
+        .unwrap();
         drop(file);
         let (_, active) = appended_segment_has_user_turn(&path, offset).await.unwrap();
         assert!(active);
@@ -1211,6 +1302,26 @@ Change the launch icon.
         // propagated out of run() and stopped tracking every chat until relaunch.
         let path = temp_jsonl("never-created");
         assert!(appended_segment_has_user_turn(&path, 0).await.is_err());
+    }
+
+    #[test]
+    fn persisted_histories_are_polled_outside_the_recent_file_window() {
+        let path = temp_jsonl("persisted-poll");
+        std::fs::write(&path, "{\"role\":\"user\",\"content\":\"saved\"}\n").unwrap();
+        let session: SessionMeta = serde_json::from_value(serde_json::json!({
+            "session_id": "persisted",
+            "agent": "codex",
+            "title": "Persisted chat",
+            "jsonl_path": path.to_string_lossy(),
+            "last_active": 1
+        }))
+        .unwrap();
+        let persisted = HashMap::from([("persisted".to_string(), session)]);
+
+        let files = collect_watch_files(&[], &persisted);
+        assert_eq!(files, vec![path.clone()]);
+
+        std::fs::remove_file(path).unwrap();
     }
 
     #[tokio::test]

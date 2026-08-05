@@ -44,6 +44,10 @@ pub struct Turn {
     pub history_position: u64,
 }
 
+fn surfaced_session_ids(sessions: &HashMap<String, session_store::SessionMeta>) -> HashSet<String> {
+    sessions.keys().cloned().collect()
+}
+
 #[tauri::command]
 fn get_session(
     state: tauri::State<Arc<AppState>>,
@@ -313,8 +317,7 @@ fn shortcut_session_id(
     sessions
         .values()
         .filter(|session| {
-            (!surfaced_only || surfaced.contains(&session.session_id))
-                && session.surface == surface
+            (!surfaced_only || surfaced.contains(&session.session_id)) && session.surface == surface
         })
         .max_by_key(|session| session.last_active)
         .map(|session| session.session_id.clone())
@@ -336,13 +339,8 @@ fn capture_selection_as_thought(app: &tauri::AppHandle) -> Result<(), String> {
         return Ok(());
     };
     let state = app.state::<Arc<AppState>>();
-    let session_id = shortcut_session_id(
-        &state,
-        &surface,
-        conversation_id.as_deref(),
-        false,
-    )
-    .ok_or_else(|| "dooni could not match the current chat".to_string())?;
+    let session_id = shortcut_session_id(&state, &surface, conversation_id.as_deref(), false)
+        .ok_or_else(|| "dooni could not match the current chat".to_string())?;
 
     let captured_prompt_id = format!(
         "captured-{}",
@@ -408,11 +406,14 @@ fn main() {
         .iter()
         .map(|(id, session)| (id.clone(), session.asked_prompts.clone()))
         .collect();
+    // Persisted chats remain visible across app restarts. The watcher refreshes
+    // their histories immediately and continues polling them for appended turns.
+    let surfaced_sessions = surfaced_session_ids(&meta);
     let state = Arc::new(AppState {
         sessions: Mutex::new(HashMap::new()),
         prompts_by_session: Mutex::new(prompts_by_session),
         session_meta: Mutex::new(meta),
-        surfaced_sessions: Mutex::new(HashSet::new()),
+        surfaced_sessions: Mutex::new(surfaced_sessions),
         config: Mutex::new(cfg),
     });
 
@@ -530,6 +531,19 @@ mod tests {
         assert_eq!(
             shortcut_session_id(&state, "codex-app", None, false).as_deref(),
             Some("current")
+        );
+    }
+
+    #[test]
+    fn persisted_sessions_are_surfaced_on_restart() {
+        let sessions = HashMap::from([
+            ("one".to_string(), shortcut_session("one", 20)),
+            ("two".to_string(), shortcut_session("two", 10)),
+        ]);
+        let surfaced = surfaced_session_ids(&sessions);
+        assert_eq!(
+            surfaced,
+            HashSet::from(["one".to_string(), "two".to_string()])
         );
     }
 }

@@ -21,6 +21,7 @@ walkdir = "2"
 anyhow = "1"
 chrono = "0.4"
 core-foundation = "0.10"
+rusqlite = { version = "0.40.1", default-features = false, features = ["bundled"] }
 
 [features]
 default = ["custom-protocol"]
