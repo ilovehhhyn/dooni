@@ -635,7 +635,18 @@ fn clean_selection(text: String) -> Option<String> {
     (!text.is_empty()).then(|| text.to_string())
 }
 
-pub fn focus_chat_for(surface: &str, project_dir: Option<&str>) -> Result<bool> {
+pub fn focus_chat_for(
+    surface: &str,
+    project_dir: Option<&str>,
+    chat_url: Option<&str>,
+) -> Result<bool> {
+    if surface == "manual" {
+        let Some(url) = chat_url else {
+            return Ok(false);
+        };
+        open_deep_link(url)?;
+        return Ok(true);
+    }
     if surface == "codex-app" {
         return activate_running_app(&["ChatGPT", "Codex"]);
     }

@@ -71,6 +71,11 @@ textarea:focus-visible,
 }
 .dooni-pin[aria-pressed="true"] .dooni-pin-body { fill: var(--ink); }
 .dooni-pin[aria-pressed="true"] .dooni-pin-eyes { fill: var(--paper); }
+/* A manual chat is static; its window wears the muted mark, pinned or not. */
+.dooni-pin.manual .dooni-pin-body { stroke: var(--muted); }
+.dooni-pin.manual .dooni-pin-eyes { fill: var(--muted); }
+.dooni-pin.manual[aria-pressed="true"] .dooni-pin-body { fill: var(--muted); }
+.dooni-pin.manual[aria-pressed="true"] .dooni-pin-eyes { fill: var(--paper); }
 .lock-btn {
   position: fixed;
   /* The blob's visible left edge follows the 22px prompt-control grid line. */

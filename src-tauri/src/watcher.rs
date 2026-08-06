@@ -803,6 +803,7 @@ fn refresh_session_meta(files: &[PathBuf], app: &AppHandle, state: &Arc<AppState
                     jsonl_path: jsonl_path.clone(),
                     history_bytes: 0,
                     source_conversation_id: source_conversation_id.clone(),
+                    source_url: None,
                     surface: surface.clone(),
                     last_active: mtime,
                     running,
@@ -849,6 +850,9 @@ fn refresh_session_meta(files: &[PathBuf], app: &AppHandle, state: &Arc<AppState
         if map.len() > session_store::MAX_TRACKED_SESSIONS {
             let mut by_age: Vec<_> = map
                 .values()
+                // Manual chats hold notes with no history to restore them from,
+                // so they never age out to make room for a discovered chat.
+                .filter(|session| session.surface != session_store::MANUAL_SURFACE)
                 .map(|m| (m.last_active, m.session_id.clone()))
                 .collect();
             by_age.sort_by(|a, b| b.0.cmp(&a.0));

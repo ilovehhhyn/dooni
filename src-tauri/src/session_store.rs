@@ -58,7 +58,11 @@ pub struct SessionMeta {
     /// Provider conversation/thread id used by supported desktop deep links.
     #[serde(default)]
     pub source_conversation_id: Option<String>,
-    /// Where the chat originated: "terminal", "codex-app", or "claude-app".
+    /// Web address of a manually added chat, opened when its title is clicked.
+    #[serde(default)]
+    pub source_url: Option<String>,
+    /// Where the chat originated: "terminal", "codex-app", "claude-app", or
+    /// "manual" for a user-created chat with no history to follow.
     #[serde(default = "default_surface")]
     pub surface: String,
     /// Unix seconds of last observed activity (JSONL mtime).
@@ -87,6 +91,10 @@ fn default_surface() -> String {
 
 const LEGACY_MIGRATION_KEY: &str = "legacy_sessions_json_migrated";
 pub const MAX_TRACKED_SESSIONS: usize = 20;
+/// Surface of a chat the user added by hand instead of one dooni discovered.
+pub const MANUAL_SURFACE: &str = "manual";
+/// Session-id prefix every manual chat carries, so SQL retention can spot one.
+pub const MANUAL_ID_PREFIX: &str = "manual-";
 
 fn database_path() -> Option<PathBuf> {
     dirs::config_dir().map(|d| d.join("dooni").join("sessions.sqlite3"))
@@ -145,14 +153,19 @@ fn load_from_paths(
 ) -> Result<HashMap<String, SessionMeta>> {
     let mut connection = open_database(database)?;
     migrate_legacy_json(&mut connection, legacy)?;
+    // Retention counts discovered chats only. A manual chat's notes exist
+    // nowhere else, while a discovered chat can always be re-read from its
+    // history file, so manual chats neither age out nor consume a slot.
     connection.execute(
         "DELETE FROM sessions
-         WHERE session_id NOT IN (
+         WHERE session_id NOT LIKE ?2
+           AND session_id NOT IN (
              SELECT session_id FROM sessions
+             WHERE session_id NOT LIKE ?2
              ORDER BY last_active DESC, session_id DESC
              LIMIT ?1
          )",
-        [MAX_TRACKED_SESSIONS as i64],
+        params![MAX_TRACKED_SESSIONS as i64, format!("{MANUAL_ID_PREFIX}%")],
     )?;
 
     let mut statement = connection.prepare(
@@ -334,6 +347,35 @@ mod tests {
 
         let loaded_again = load_from_paths(&database, &legacy).unwrap();
         assert_eq!(loaded_again["one"].title, "From SQLite");
+
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn manual_chats_outlive_the_retention_window() {
+        // Their thoughts have no history file to restore them from, so they
+        // must survive a full turnover of discovered chats.
+        let directory = test_directory("manual-retention");
+        let database = directory.join("sessions.sqlite3");
+        let legacy = directory.join("sessions.json");
+        let mut sessions = (0..MAX_TRACKED_SESSIONS)
+            .map(|index| {
+                let id = format!("session-{index:02}");
+                let mut value = session(&id, &id);
+                value.last_active = 100 + index as u64;
+                (id, value)
+            })
+            .collect::<HashMap<_, _>>();
+        let mut manual = session("manual-1", "Reading list");
+        manual.surface = MANUAL_SURFACE.to_string();
+        manual.last_active = 1;
+        sessions.insert("manual-1".to_string(), manual);
+        save_to_path(&database, &sessions).unwrap();
+
+        let loaded = load_from_paths(&database, &legacy).unwrap();
+        assert_eq!(loaded.len(), MAX_TRACKED_SESSIONS + 1);
+        assert!(loaded.contains_key("manual-1"));
+        assert!(loaded.contains_key("session-00"));
 
         std::fs::remove_dir_all(directory).unwrap();
     }
