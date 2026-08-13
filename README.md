@@ -1,6 +1,6 @@
 # dooni
 
-a small desktop memo for tracking your codex and claude coding chats, keeping a running list of your prompts & space for jotting down thoughts of each session across terminal and app.
+a small desktop memo app (installable for mac) for tracking your codex and claude coding chats, keeping a running list of your prompts & space for jotting down thoughts of each session across terminal and app.
 
 dooni is your pensive so you never lose a thread!
 
