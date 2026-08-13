@@ -1,8 +1,15 @@
+---
+covers:
+- docs/dooni-demo-poster.png
+- docs/dooni-demo.mp4
+---
 # dooni
 
 a small desktop memo app (installable for mac) for automatically tracking your codex and claude coding chats, keeping a running list of your prompts & space for jotting down thoughts of each session across terminal and app with keyboard shortcuts.
 
 dooni is your pensive so you never lose a thread!
+
+[![Watch the 60-second dooni walkthrough: poster image of the dooni memo pad](docs/dooni-demo-poster.png)](docs/dooni-demo.mp4)
 
 ## Install
 
