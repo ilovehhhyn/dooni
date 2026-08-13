@@ -162,6 +162,7 @@ fn record_prompt(
                 ),
                 history_bytes: 0,
                 source_conversation_id: conversation_id.clone(),
+                source_url: None,
                 surface: "claude-app".to_string(),
                 last_active: now,
                 running: true,
@@ -193,6 +194,7 @@ fn record_prompt(
         if sessions.len() > session_store::MAX_TRACKED_SESSIONS {
             let mut by_age = sessions
                 .values()
+                .filter(|session| session.surface != session_store::MANUAL_SURFACE)
                 .map(|session| (session.last_active, session.session_id.clone()))
                 .collect::<Vec<_>>();
             by_age.sort_by(|left, right| right.0.cmp(&left.0));

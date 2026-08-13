@@ -14,7 +14,16 @@ const els = {
   anthropicRuntimeSave: document.getElementById("anthropic-runtime-save"),
   runtimeSave: document.getElementById("runtime-save"),
   claudeDesktopAction: document.getElementById("claude-desktop-action"),
+  manualButton: document.getElementById("manual-btn"),
+  manualModal: document.getElementById("manual-modal"),
+  manualModalBackdrop: document.getElementById("manual-modal-backdrop"),
+  manualModalClose: document.getElementById("manual-modal-close"),
+  manualTitle: document.getElementById("manual-title"),
+  manualUrl: document.getElementById("manual-url"),
+  manualSave: document.getElementById("manual-save"),
 };
+
+const AGENT_LABELS = { codex: "Codex", claude: "Claude", manual: "Manual" };
 
 const ICONS = {
   edit: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M12.6 2.6a2 2 0 0 1 2.8 2.8L6 14.8l-4 .9.9-4L12.6 2.6zM10.8 4.4l2.8 2.8"></path></svg>',
@@ -65,8 +74,11 @@ function renderList() {
     const item = document.createElement("li");
     item.className = "session-row";
 
+    // A manual chat has no history to follow, so it never lights up.
     const dot = document.createElement("span");
-    dot.className = `session-dot ${session.running ? "running" : "idle"}`;
+    dot.className = session.surface === "manual"
+      ? "session-dot manual"
+      : `session-dot ${session.running ? "running" : "idle"}`;
 
     const identity = document.createElement("div");
     identity.className = "session-row-identity";
@@ -88,11 +100,7 @@ function renderList() {
 
     const meta = document.createElement("span");
     meta.className = "list-meta";
-    const agent = session.agent === "codex"
-      ? "Codex"
-      : session.agent === "claude"
-        ? "Claude"
-        : "Unknown";
+    const agent = AGENT_LABELS[session.agent] || "Unknown";
     meta.textContent = [session.project_name, agent].filter(Boolean).join(" | ");
     identity.append(title, meta);
 
@@ -212,6 +220,56 @@ function setupPinButton() {
       if (current?.setAlwaysOnTop) await current.setAlwaysOnTop(pinned);
     } catch (error) {
       setStatus(`pin error: ${error}`);
+    }
+  });
+}
+
+function openManualModal() {
+  els.manualTitle.value = "";
+  els.manualUrl.value = "";
+  els.manualModal.classList.remove("hidden");
+  requestAnimationFrame(() => els.manualTitle.focus());
+}
+
+function closeManualModal() {
+  els.manualModal.classList.add("hidden");
+}
+
+async function saveManualSession() {
+  const title = els.manualTitle.value.trim();
+  const url = els.manualUrl.value.trim();
+  if (!title && !url) {
+    setStatus("add a title or a chat link");
+    els.manualTitle.focus();
+    return;
+  }
+  els.manualSave.disabled = true;
+  try {
+    const session = await window.__TAURI__.core.invoke("create_manual_session", {
+      title,
+      url: url || null,
+    });
+    closeManualModal();
+    await refreshSessions();
+    await launchSession(session.session_id);
+  } catch (error) {
+    setStatus(`add error: ${error}`);
+  } finally {
+    els.manualSave.disabled = false;
+  }
+}
+
+function setupManualChat() {
+  els.manualButton.addEventListener("click", openManualModal);
+  els.manualModalClose.addEventListener("click", closeManualModal);
+  els.manualModalBackdrop.addEventListener("click", closeManualModal);
+  els.manualSave.addEventListener("click", saveManualSession);
+  els.manualModal.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" && event.target.tagName === "INPUT") {
+      event.preventDefault();
+      saveManualSession();
+    } else if (event.key === "Escape") {
+      closeManualModal();
     }
   });
 }
@@ -412,6 +470,7 @@ async function init() {
     return;
   }
   setupPinButton();
+  setupManualChat();
   await refreshSessions();
   await window.__TAURI__.event.listen("sessions-updated", (event) => {
     const payload = event.payload || {};

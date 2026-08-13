@@ -92,6 +92,10 @@
   background: var(--paper);
 }
 .session-dot.running { background: var(--ink); }
+.session-dot.manual {
+  border-color: var(--muted);
+  background: var(--muted);
+}
 .session-row-identity {
   min-width: 0;
   display: flex;
@@ -297,6 +301,13 @@
   border-radius: 8px;
   color: var(--ink);
   background: var(--soft);
+}
+.settings-modal-card input + label { margin-top: 12px; }
+.modal-note {
+  margin-top: 10px;
+  color: var(--muted);
+  font-size: var(--font-meta);
+  line-height: 16px;
 }
 .manual dl {
   display: flex;

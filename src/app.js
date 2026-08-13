@@ -373,6 +373,7 @@ async function initSession(invoke, listen) {
     : [];
   futurePrompts = Array.isArray(data.future_prompts) ? data.future_prompts : [];
   els.memoTitle.textContent = data.title || "untitled chat";
+  document.getElementById("lock-btn").classList.toggle("manual", data.surface === "manual");
   renderAskedPrompts();
   renderPrompts();
   setupTabs();

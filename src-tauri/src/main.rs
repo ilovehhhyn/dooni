@@ -194,9 +194,79 @@ fn rename_session(
     Ok(updated_title)
 }
 
+/// A chat the user added by hand. It has no history file to follow, so the
+/// watcher never touches it: its prompts stay empty, its dot never lights up,
+/// and the capture shortcuts cannot match it (they key off the frontmost app,
+/// which is never `manual`). Thoughts are still editable.
+fn manual_session(
+    title: &str,
+    url: Option<&str>,
+    created_millis: u128,
+) -> Result<session_store::SessionMeta, String> {
+    let url = url.map(str::trim).filter(|url| !url.is_empty());
+    if let Some(url) = url {
+        if !url.starts_with("https://") && !url.starts_with("http://") {
+            return Err("chat link must start with https://".to_string());
+        }
+    }
+    let title = sessions::limit_title(title);
+    let session_id = format!("{}{created_millis}", session_store::MANUAL_ID_PREFIX);
+    Ok(session_store::SessionMeta {
+        session_id: session_id.clone(),
+        agent: session_store::MANUAL_SURFACE.to_string(),
+        title: if title.is_empty() {
+            "Untitled chat".to_string()
+        } else {
+            title
+        },
+        title_locked: true,
+        title_ai_generated: false,
+        excluded_prompt_indexes: Vec::new(),
+        project_dir: None,
+        project_name: None,
+        jsonl_path: format!("manual://{session_id}"),
+        history_bytes: 0,
+        source_conversation_id: None,
+        source_url: url.map(str::to_string),
+        surface: session_store::MANUAL_SURFACE.to_string(),
+        last_active: (created_millis / 1000) as u64,
+        running: false,
+        asked_prompts: Vec::new(),
+        asked_prompt_timestamps: Vec::new(),
+        asked_prompt_locators: Vec::new(),
+        future_prompts: Vec::new(),
+    })
+}
+
+#[tauri::command]
+fn create_manual_session(
+    app: tauri::AppHandle,
+    state: tauri::State<Arc<AppState>>,
+    title: String,
+    url: Option<String>,
+) -> Result<session_store::SessionMeta, String> {
+    let created_millis = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|error| error.to_string())?
+        .as_millis();
+    let session = manual_session(&title, url.as_deref(), created_millis)?;
+    {
+        let mut sessions = state.session_meta.lock().unwrap();
+        sessions.insert(session.session_id.clone(), session.clone());
+        session_store::save(&sessions).map_err(|error| error.to_string())?;
+    }
+    state
+        .surfaced_sessions
+        .lock()
+        .unwrap()
+        .insert(session.session_id.clone());
+    watcher::emit_surfaced_sessions(&app, &state);
+    Ok(session)
+}
+
 #[tauri::command]
 fn focus_session(state: tauri::State<Arc<AppState>>, session_id: String) -> Result<bool, String> {
-    let (project_dir, surface) = {
+    let (project_dir, surface, source_url) = {
         let m = state.session_meta.lock().unwrap();
         let session = m.get(&session_id);
         (
@@ -204,9 +274,11 @@ fn focus_session(state: tauri::State<Arc<AppState>>, session_id: String) -> Resu
             session
                 .map(|s| s.surface.clone())
                 .unwrap_or_else(|| "terminal".to_string()),
+            session.and_then(|s| s.source_url.clone()),
         )
     };
-    focus::focus_chat_for(&surface, project_dir.as_deref()).map_err(|e| e.to_string())
+    focus::focus_chat_for(&surface, project_dir.as_deref(), source_url.as_deref())
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -450,6 +522,7 @@ fn main() {
             get_sessions,
             get_session,
             rename_session,
+            create_manual_session,
             focus_session,
             locate_asked_prompt,
             launch_session_window,
@@ -532,6 +605,44 @@ mod tests {
             shortcut_session_id(&state, "codex-app", None, false).as_deref(),
             Some("current")
         );
+    }
+
+    #[test]
+    fn a_manual_chat_keeps_its_link_and_stays_static() {
+        let session = manual_session(
+            "  Reading list  ",
+            Some("https://claude.ai/chat/abc"),
+            1_700,
+        )
+        .expect("https links are accepted");
+        assert_eq!(session.title, "Reading list");
+        assert_eq!(session.surface, session_store::MANUAL_SURFACE);
+        assert_eq!(
+            session.source_url.as_deref(),
+            Some("https://claude.ai/chat/abc")
+        );
+        assert_eq!(session.session_id, "manual-1700");
+        assert_eq!(session.last_active, 1);
+        assert!(!session.running);
+        // A manual title is the user's, so AI review must never overwrite it.
+        assert!(session.title_locked);
+    }
+
+    #[test]
+    fn a_manual_chat_can_be_a_bare_title() {
+        let session = manual_session("", None, 1_700).unwrap();
+        assert_eq!(session.title, "Untitled chat");
+        assert_eq!(session.source_url, None);
+    }
+
+    #[test]
+    fn a_manual_chat_link_must_be_a_web_address() {
+        // `open` would happily launch any scheme, so only http(s) is accepted.
+        assert!(manual_session("x", Some("file:///etc/passwd"), 1).is_err());
+        assert!(manual_session("x", Some("  "), 1)
+            .unwrap()
+            .source_url
+            .is_none());
     }
 
     #[test]
