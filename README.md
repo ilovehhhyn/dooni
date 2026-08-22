@@ -9,7 +9,11 @@ a small desktop memo app (installable for mac) for automatically tracking your c
 
 dooni is your pensive so you never lose a thread!
 
+## 60-second demo
+
 [![Watch the 60-second dooni walkthrough: poster image of the dooni memo pad](docs/dooni-demo-poster.png)](docs/dooni-demo.mp4)
+
+**[▶ Watch the 60-second dooni demo video](https://github.com/ilovehhhyn/dooni/raw/refs/heads/main/docs/dooni-demo.mp4)**
 
 ## Install
 
