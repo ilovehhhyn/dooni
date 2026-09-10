@@ -292,6 +292,33 @@ mod tests {
     }
 
     #[test]
+    fn rich_inbox_and_draft_survive_chat_retention() {
+        let directory = test_directory("think-retention");
+        let database = directory.join("sessions.sqlite3");
+        let legacy = directory.join("sessions.json");
+        assert_eq!(
+            load_think_data_at(&database).unwrap()["items"],
+            serde_json::json!([])
+        );
+        let inbox = serde_json::json!({"items": [{"id": "thought", "done": false, "blocks": [
+            {"type": "text", "text": "Why does this work?"},
+            {"type": "link", "text": "A saved post", "href": "https://x.com/example/status/1"},
+            {"type": "image", "src": "data:image/png;base64,aGVsbG8="}
+        ]}], "draft": {"blocks": [{"type": "text", "text": "Still writing"}], "editing": null}});
+        save_think_data_at(&database, &inbox).unwrap();
+        let chats = (0..30)
+            .map(|i| {
+                let id = format!("chat-{i}");
+                (id.clone(), session(&id, "Chat"))
+            })
+            .collect();
+        save_to_path(&database, &chats).unwrap();
+        load_from_paths(&database, &legacy).unwrap();
+        assert_eq!(load_think_data_at(&database).unwrap(), inbox);
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
     fn default_title_prefers_project_basename() {
         assert_eq!(
             default_title(Some("/Users/x/dooni"), "abc123def456ghi"),
@@ -402,4 +429,36 @@ mod tests {
 
         std::fs::remove_dir_all(directory).unwrap();
     }
+}
+
+// Keep the inbox outside chat retention: saved ideas must never age out.
+pub fn load_think_data() -> Result<serde_json::Value> {
+    let path = database_path().ok_or_else(|| anyhow::anyhow!("Data directory unavailable"))?;
+    load_think_data_at(&path)
+}
+
+fn load_think_data_at(path: &std::path::Path) -> Result<serde_json::Value> {
+    let connection = open_database(path)?;
+    let data: Option<String> = connection
+        .query_row(
+            "SELECT value FROM metadata WHERE key = 'think_inbox'",
+            [],
+            |row| row.get(0),
+        )
+        .optional()?;
+    Ok(match data {
+        Some(data) => serde_json::from_str(&data)?,
+        None => serde_json::json!({"items": [], "draft": null}),
+    })
+}
+
+pub fn save_think_data(data: &serde_json::Value) -> Result<()> {
+    let path = database_path().ok_or_else(|| anyhow::anyhow!("Data directory unavailable"))?;
+    save_think_data_at(&path, data)
+}
+
+fn save_think_data_at(path: &std::path::Path, data: &serde_json::Value) -> Result<()> {
+    let connection = open_database(path)?;
+    connection.execute("INSERT INTO metadata(key, value) VALUES ('think_inbox', ?1) ON CONFLICT(key) DO UPDATE SET value = excluded.value", [serde_json::to_string(data)?])?;
+    Ok(())
 }

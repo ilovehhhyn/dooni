@@ -1,11 +1,11 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-mod claude_desktop;
 mod codex_runtime;
 mod config;
 mod focus;
 mod session_store;
 mod sessions;
+mod source_titles;
 mod summarizer;
 mod watcher;
 
@@ -45,7 +45,11 @@ pub struct Turn {
 }
 
 fn surfaced_session_ids(sessions: &HashMap<String, session_store::SessionMeta>) -> HashSet<String> {
-    sessions.keys().cloned().collect()
+    sessions
+        .values()
+        .filter(|session| session.surface != session_store::MANUAL_SURFACE)
+        .map(|session| session.session_id.clone())
+        .collect()
 }
 
 #[tauri::command]
@@ -53,7 +57,14 @@ fn get_session(
     state: tauri::State<Arc<AppState>>,
     session_id: String,
 ) -> Option<session_store::SessionMeta> {
-    state.session_meta.lock().unwrap().get(&session_id).cloned()
+    let mut session = state
+        .session_meta
+        .lock()
+        .unwrap()
+        .get(&session_id)
+        .cloned()?;
+    source_titles::apply(std::slice::from_mut(&mut session));
+    Some(session)
 }
 
 #[tauri::command]
@@ -160,14 +171,124 @@ fn open_claude_desktop_access() -> Result<(), String> {
 }
 
 #[tauri::command]
+fn get_think_data() -> Result<serde_json::Value, String> {
+    session_store::load_think_data().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn save_think_data(data: serde_json::Value) -> Result<(), String> {
+    session_store::save_think_data(&data).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn open_think_link(url: String) -> Result<(), String> {
+    let parsed = reqwest::Url::parse(&url).map_err(|e| e.to_string())?;
+    if !matches!(parsed.scheme(), "https" | "http") {
+        return Err("Only web links can be opened".into());
+    }
+    let status = std::process::Command::new("open")
+        .arg(parsed.as_str())
+        .status()
+        .map_err(|e| e.to_string())?;
+    if !status.success() {
+        return Err("Could not open the browser".into());
+    }
+    Ok(())
+}
+
+fn codex_thought_url(prompt: Option<&str>) -> (reqwest::Url, bool) {
+    // The installed desktop app handles this route as a new, unsent composer.
+    // Keep large captures on the clipboard rather than exceeding macOS URL limits.
+    let prompt = prompt.filter(|text| !text.is_empty() && text.len() <= 16_000);
+    let mut url = reqwest::Url::parse("codex://threads/new").expect("static desktop URL");
+    if let Some(prompt) = prompt {
+        url.query_pairs_mut().append_pair("prompt", prompt);
+    }
+    (url, prompt.is_some())
+}
+
+#[tauri::command]
+fn open_think_app(provider: String, prompt: Option<String>) -> Result<bool, String> {
+    let bundle = match provider.as_str() {
+        "Codex" | "ChatGPT" => "com.openai.codex",
+        "Claude" => "com.anthropic.claudefordesktop",
+        _ => return Err("Unknown desktop app".into()),
+    };
+    let mut command = std::process::Command::new("open");
+    command.args(["-b", bundle]);
+    let prefilled = if provider == "Codex" || provider == "ChatGPT" {
+        let (url, prefilled) = codex_thought_url(prompt.as_deref());
+        command.arg(url.as_str());
+        prefilled
+    } else {
+        false
+    };
+    let output = command.output().map_err(|e| e.to_string())?;
+    if !output.status.success() {
+        return Err(format!(
+            "Could not open {provider}. Check that the desktop app is installed."
+        ));
+    }
+    Ok(prefilled)
+}
+
+#[tauri::command]
+async fn copy_think_content(text: String, images: Vec<String>) -> Result<(), String> {
+    // AppKit preserves image attachments on the system clipboard for browser and desktop chats.
+    tauri::async_runtime::spawn_blocking(move || {
+        use std::io::Write;
+        if images.is_empty() {
+            let mut child = std::process::Command::new("pbcopy").stdin(std::process::Stdio::piped()).spawn().map_err(|e| e.to_string())?;
+            child.stdin.take().ok_or("Clipboard input unavailable")?.write_all(text.as_bytes()).map_err(|e| e.to_string())?;
+            if !child.wait().map_err(|e| e.to_string())?.success() { return Err("Could not copy thought".into()); }
+            return Ok(());
+        }
+        let script = r#"import AppKit
+import Foundation
+let input = FileHandle.standardInput.readDataToEndOfFile()
+let value = try JSONSerialization.jsonObject(with: input) as! [String: Any]
+let text = value["text"] as! String
+let images = value["images"] as! [String]
+var items: [NSPasteboardWriting] = []
+for image in images {
+    if let comma = image.firstIndex(of: ","), let data = Data(base64Encoded: String(image[image.index(after: comma)...])), let picture = NSBitmapImageRep(data: data), let png = picture.representation(using: .png, properties: [:]) {
+        let attachment = NSPasteboardItem()
+        attachment.setData(png, forType: .png)
+        attachment.setString(text, forType: .string)
+        items.append(attachment)
+    }
+}
+let item = NSPasteboardItem()
+item.setString(text, forType: .string)
+if items.isEmpty { items.append(item) }
+NSPasteboard.general.clearContents()
+if !NSPasteboard.general.writeObjects(items) { exit(1) }
+"#;
+        let mut child = std::process::Command::new("swift").args(["-e", script])
+            .stdin(std::process::Stdio::piped()).stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::piped()).spawn().map_err(|e| e.to_string())?;
+        let payload = serde_json::json!({"text": text, "images": images}).to_string();
+        child.stdin.take().ok_or("Clipboard input unavailable")?.write_all(payload.as_bytes()).map_err(|e| e.to_string())?;
+        let output = child.wait_with_output().map_err(|e| e.to_string())?;
+        if !output.status.success() { return Err("Could not copy this thought to the clipboard".into()); }
+        Ok(())
+    }).await.map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
 fn get_sessions(state: tauri::State<Arc<AppState>>) -> Vec<session_store::SessionMeta> {
     let surfaced = state.surfaced_sessions.lock().unwrap().clone();
     let m = state.session_meta.lock().unwrap();
     let mut v: Vec<_> = m
         .values()
-        .filter(|session| surfaced.contains(&session.session_id))
+        .filter(|session| {
+            surfaced.contains(&session.session_id)
+                && session.surface != session_store::MANUAL_SURFACE
+        })
         .cloned()
         .collect();
+    drop(m);
+    source_titles::apply(&mut v);
     v.sort_by(|a, b| b.last_active.cmp(&a.last_active));
     v
 }
@@ -209,7 +330,7 @@ fn manual_session(
             return Err("chat link must start with https://".to_string());
         }
     }
-    let title = sessions::limit_title(title);
+    let title = title.trim().to_string();
     let session_id = format!("{}{created_millis}", session_store::MANUAL_ID_PREFIX);
     Ok(session_store::SessionMeta {
         session_id: session_id.clone(),
@@ -340,7 +461,7 @@ fn open_session_window(app: &tauri::AppHandle, session_id: &str) -> Result<(), S
     }
     let mut builder = WebviewWindowBuilder::new(app, &label, WebviewUrl::App("index.html".into()))
         .title("")
-        .inner_size(420.0, 560.0)
+        .inner_size(420.0, 747.0)
         .min_inner_size(340.0, 420.0)
         .always_on_top(false)
         .resizable(true)
@@ -466,10 +587,12 @@ fn main() {
     for session in meta.values_mut() {
         let project = sessions::project_label(session.project_dir.as_deref());
         session.project_name = project.clone();
-        session.title = sessions::limit_title(&sessions::title_without_project_prefix(
-            &session.title,
-            project.as_deref(),
-        ));
+        if !session.title_locked {
+            session.title = sessions::limit_title(&sessions::title_without_project_prefix(
+                &session.title,
+                project.as_deref(),
+            ));
+        }
         if session.title.is_empty() {
             session.title = "Untitled chat".to_string();
         }
@@ -519,6 +642,11 @@ fn main() {
             open_codex_install,
             get_claude_desktop_access_status,
             open_claude_desktop_access,
+            get_think_data,
+            save_think_data,
+            open_think_link,
+            open_think_app,
+            copy_think_content,
             get_sessions,
             get_session,
             rename_session,
@@ -548,13 +676,7 @@ fn main() {
                 }
             });
 
-            let claude_handle = handle.clone();
-            let claude_state = s.clone();
-            tauri::async_runtime::spawn(async move {
-                if let Err(error) = claude_desktop::run(claude_handle, claude_state).await {
-                    eprintln!("[dooni] Claude Desktop watcher error: {error:?}");
-                }
-            });
+            // Chat discovery uses the JSONL watcher above.
 
             Ok(())
         })
@@ -576,6 +698,27 @@ mod tests {
             "last_active": last_active,
         }))
         .unwrap()
+    }
+
+    #[test]
+    fn codex_handoff_preserves_prompt_without_submitting() {
+        let text = "Why? #notes & a link=https://example.com/?a=1&b=2\n你好";
+        let (url, prefilled) = codex_thought_url(Some(text));
+        assert!(prefilled);
+        assert_eq!(url.scheme(), "codex");
+        assert_eq!(url.host_str(), Some("threads"));
+        assert_eq!(url.path(), "/new");
+        assert_eq!(
+            url.query_pairs().collect::<Vec<_>>(),
+            vec![("prompt".into(), text.into())]
+        );
+    }
+
+    #[test]
+    fn large_captures_open_blank_composer_for_clipboard_paste() {
+        let (url, prefilled) = codex_thought_url(Some(&"x".repeat(16001)));
+        assert!(!prefilled);
+        assert_eq!(url.as_str(), "codex://threads/new");
     }
 
     #[test]

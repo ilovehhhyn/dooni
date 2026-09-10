@@ -15,23 +15,48 @@
           <path class="dooni-pin-eyes" d="M5 6h2v2H5zM9 6h2v2H9z"></path>
         </svg>
       </button>
+      <span class="brand-name">dooni</span>
       <button id="settings-btn" class="icon-button" type="button" title="Settings" aria-label="Open settings">
         <svg viewBox="0 0 16 16" aria-hidden="true">
           <circle cx="8" cy="8" r="2.25"></circle>
           <path d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M12.6 3.4l-1.4 1.4M4.8 11.2l-1.4 1.4"></path>
         </svg>
       </button>
-      <button id="manual-btn" class="icon-button" type="button" title="Add a chat" aria-label="Add a chat by hand">
-        <svg viewBox="0 0 16 16" aria-hidden="true">
-          <path d="M8 3.5v9M3.5 8h9"></path>
-        </svg>
-      </button>
     </div>
   </header>
 
-  <main class="mgr-main">
+  <nav class="home-tabs" role="tablist" aria-label="Your space">
+    <button id="tab-think" role="tab" aria-selected="true" aria-controls="home-think">to-think</button>
+    <button id="tab-chats" role="tab" aria-selected="false" aria-controls="home-chats" tabindex="-1">chats</button>
+  </nav>
+  <main id="home-chats" class="mgr-main hidden" role="tabpanel" aria-labelledby="tab-chats">
     <ul id="mgr-list-ul" class="mgr-list"></ul>
   </main>
+  <main id="home-think" class="think-main" role="tabpanel" aria-labelledby="tab-think">
+    <ul id="think-list" class="think-list"></ul>
+    <form id="think-form" class="think-composer">
+      <div id="think-input" contenteditable="true" role="textbox" aria-multiline="true" aria-label="A thought to come back to"></div>
+      <div class="composer-footer">
+        <div class="composer-attachment-shell">
+          <button id="composer-attachments" type="button" aria-label="Add images or a link" aria-expanded="false" aria-controls="composer-attachments-menu" title="Add images or a link"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v16M4 12h16" /></svg></button>
+          <div id="composer-attachments-menu" class="hidden">
+            <button id="attach-image" type="button">Add images</button>
+            <button id="attach-link" type="button">Add link <span>⌘K</span></button>
+          </div>
+        </div>
+      </div>
+      <input id="image-picker" type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple hidden />
+    </form>
+  </main>
+  <div id="link-modal" class="settings-modal hidden" role="dialog" aria-modal="true" aria-labelledby="link-heading">
+    <div class="settings-modal-backdrop"></div>
+    <form id="link-form" class="settings-modal-card">
+      <header><h2 id="link-heading">Add a link</h2><button type="button" id="link-close" class="icon-button" aria-label="Close link editor">×</button></header>
+      <label for="link-label">Text to display</label><input id="link-label" placeholder="Something worth thinking about" />
+      <label for="link-url">Link</label><input id="link-url" type="url" placeholder="https://" required />
+      <button class="primary-button" type="submit">Add link</button>
+    </form>
+  </div>
 
   <section id="settings-panel" class="settings-panel hidden" aria-label="Settings">
     <header class="settings-header">
@@ -93,27 +118,8 @@
     </div>
   </section>
 
-  <div id="manual-modal" class="settings-modal hidden" role="dialog" aria-modal="true" aria-labelledby="manual-modal-title">
-    <div id="manual-modal-backdrop" class="settings-modal-backdrop" aria-hidden="true"></div>
-    <div class="settings-modal-card">
-      <header>
-        <h2 id="manual-modal-title">add a chat</h2>
-        <button id="manual-modal-close" class="icon-button" type="button" aria-label="Close add a chat">
-          <svg viewBox="0 0 16 16" aria-hidden="true">
-            <path d="M4 4l8 8M12 4l-8 8"></path>
-          </svg>
-        </button>
-      </header>
-      <label for="manual-title">title</label>
-      <input id="manual-title" type="text" placeholder="untitled chat" autocomplete="off" />
-      <label for="manual-url">chat link (optional)</label>
-      <input id="manual-url" type="url" placeholder="https://claude.ai/chat/…" autocomplete="off" spellcheck="false" />
-      <p class="modal-note">dooni cannot read this chat's history, so its thoughts stay exactly as you write them.</p>
-      <button id="manual-save" class="primary-button" type="button">add chat</button>
-    </div>
-  </div>
-
   <div id="mgr-status" class="mgr-status" role="status" aria-live="polite"></div>
   <script src="manager.js"></script>
+  <script src="think.js"></script>
 </body>
 </html>

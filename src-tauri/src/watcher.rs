@@ -743,7 +743,10 @@ pub(crate) fn emit_surfaced_sessions(app: &AppHandle, state: &Arc<AppState>) {
         .lock()
         .unwrap()
         .values()
-        .filter(|session| surfaced.contains(&session.session_id))
+        .filter(|session| {
+            surfaced.contains(&session.session_id)
+                && session.surface != session_store::MANUAL_SURFACE
+        })
         .cloned()
         .collect::<Vec<_>>();
     sessions.sort_by(|a, b| b.last_active.cmp(&a.last_active));

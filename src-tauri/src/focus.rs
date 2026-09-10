@@ -200,10 +200,6 @@ fn note_manual_accessibility_ready(pid: i32) {
     }
 }
 
-pub fn observe_frontmost_claude_desktop() -> Result<Option<ClaudeDesktopObservation>> {
-    observe_frontmost_claude_desktop_inner(false)
-}
-
 pub fn observe_frontmost_claude_desktop_with_id() -> Result<Option<ClaudeDesktopObservation>> {
     observe_frontmost_claude_desktop_inner(true)
 }

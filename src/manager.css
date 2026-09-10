@@ -353,3 +353,201 @@
   line-height: 16px;
 }
 .mgr-status.visible { opacity: 1; }
+
+/* A quiet home: two destinations, one place to capture. */
+.mgr-body { padding: 18px 20px 12px; background: #ffffff; --paper: #ffffff; --soft: #f4f4f4; --ink: #161616; --muted: #707070; }
+.mgr-toolbar { margin-bottom: 18px; }
+.toolbar-actions { width: 100%; gap: 5px; }
+.brand-name { flex: 1; font-size: 17px; font-weight: 650; letter-spacing: -.6px; padding-left: 3px; }
+.home-tabs { display: flex; gap: 22px; border-bottom: 1px solid #e5e5e5; margin-bottom: 16px; }
+.home-tabs button { border: 0; background: none; color: var(--muted); padding: 0 0 12px; cursor: pointer; font-size: 14px; position: relative; }
+.home-tabs button[aria-selected="true"] { color: var(--ink); font-weight: 600; }
+.home-tabs button[aria-selected="true"]::after { content: ''; position: absolute; height: 2px; background: #161616; bottom: -1px; left: 0; right: 0; }
+.home-tabs span { font-size: 10px; background: #f0f0f0; border-radius: 5px; padding: 2px 5px; margin-left: 4px; font-weight: 400; color: #707070; }
+.section-caption { color: var(--muted); font-size: 11px; margin-bottom: 18px; }
+.mgr-list { gap: 0; }
+.session-row { padding: 15px 0; background: transparent; border-bottom: 1px solid #eeeeee; border-radius: 0; grid-template-columns: 8px minmax(0, 1fr) 24px 24px; gap: 10px; }
+.session-dot { width: 6px; height: 6px; margin-top: 7px; border-color: #a0a0a0; }
+.session-dot.running { background: #161616; border-color: #161616; }
+.session-dot.manual { background: #999999; border: none; }
+.list-title { font-size: 13px; line-height: 20px; font-weight: 500; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.list-title.renaming { display: block; }
+.list-meta { font-size: 10px; }
+.row-action { width: 24px; opacity: 0; }
+.session-row:hover .row-action, .session-row:focus-within .row-action { opacity: 1; }
+.bare-arrow { opacity: .6; }
+.think-main { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.think-list { list-style: none; flex: 1; min-height: 0; overflow-y: auto; padding: 0 1px 12px; display: flex; flex-direction: column; gap: 12px; }
+.think-empty { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 28px 0 48px; }
+.empty-spark { color: #707070; font-size: 36px; line-height: 50px; margin-bottom: 16px; }
+.think-empty strong { font-weight: 500; font-size: 14px; }
+.think-empty p { font-size: 12px; color: var(--muted); margin-top: 8px; line-height: 21px; }
+.thought-card { border: 1px solid #e1e1e1; background: #ffffff; border-radius: 12px; padding: 14px; }
+.thought-content { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; line-height: 21px; }
+.thought-content img, #think-input img { display: block; width: auto; max-width: 100%; max-height: 240px; object-fit: contain; border-radius: 7px; margin: 8px 0; }
+.thought-content a, #think-input a { color: #161616; text-decoration-color: #aaaaaa; text-underline-offset: 3px; overflow-wrap: anywhere; }
+.thought-footer { display: flex; align-items: center; justify-content: space-between; margin-top: 12px; gap: 4px; }
+.thought-actions { display: flex; gap: 6px; }
+.quiet-button { border: 0; background: transparent; font-size: 10px; color: var(--muted); padding: 5px 4px; border-radius: 5px; cursor: pointer; }
+.quiet-button:hover { color: var(--ink); background: var(--soft); }
+.quiet-button:disabled { opacity: .45; cursor: wait; }
+.thought-actions .quiet-button { background: #f4f4f4; color: #161616; padding: 5px 8px; }
+.think-composer { flex: 0 0 auto; padding: 14px 12px 10px; border: 1px solid #dedede; background: #ffffff; border-radius: 13px; box-shadow: 0 3px 14px #16161604; }
+.think-composer:focus-within { border-color: #999999; }
+#think-input { min-height: 75px; max-height: 210px; overflow-y: auto; outline: none; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; line-height: 21px; }
+#think-input:empty::before { content: attr(data-placeholder); color: #999999; pointer-events: none; }
+.composer-footer { display: flex; align-items: center; justify-content: space-between; padding-top: 12px; gap: 5px; }
+.save-thought { border: 0; border-radius: 7px; background: #161616; color: white; padding: 7px 10px; font-size: 11px; cursor: pointer; }
+.save-thought span { opacity: .65; margin-left: 6px; }
+.save-thought:disabled { opacity: .5; }
+.composer-hint { text-align: center; color: #999999; font-size: 9px; padding-top: 8px; }
+@media (max-width: 360px) { .mgr-body { padding-inline: 14px; } .thought-card { padding: 11px; } .thought-actions { gap: 2px; } }
+#home-think .section-caption { display: flex; justify-content: space-between; align-items: center; gap: 4px; }
+.done-toggle { padding: 0; font-size: 9px; white-space: nowrap; }
+
+/* Collapsed cards stay quiet; controls sit over the card only when needed. */
+.think-list-tools { display: flex; justify-content: flex-end; min-height: 18px; margin: -5px 0 10px; }
+.think-empty { color: var(--muted); font-size: 12px; }
+.thought-card { position: relative; min-height: 63px; padding: 14px 30px 14px 38px; flex-shrink: 0; box-shadow: 0 2px 4px #00000005, 0 1px 0 #00000003; }
+.thought-content { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; max-height: 63px; overflow: hidden; }
+.thought-card.expanded .thought-content, .thought-card.is-editing .thought-content { display: block; max-height: none; overflow: visible; -webkit-line-clamp: unset; }
+.thought-footer { position: absolute; left: 32px; right: 28px; bottom: 5px; margin: 0; padding: 6px 3px 2px; opacity: 0; pointer-events: none; background: linear-gradient(#ffffff00, #ffffff 28%); transition: opacity .12s ease; }
+.thought-card:hover .thought-footer, .thought-card:focus-within .thought-footer { opacity: 1; pointer-events: auto; }
+.thought-check.quiet-button { position: absolute; left: 12px; top: 18px; width: 13px; height: 13px; padding: 0; border: 1px solid #999; border-radius: 50%; font-size: 9px; line-height: 11px; }
+.thought-check[aria-checked="true"] { background: #161616; color: white; border-color: #161616; }
+.thought-expand.quiet-button { position: absolute; bottom: 5px; right: 6px; font-size: 17px; padding: 2px 5px; line-height: 20px; }
+.thought-expand[hidden] { display: none; }
+.thought-card.is-editing { padding-bottom: 10px; }
+.thought-card.is-editing .thought-content { outline: none; min-height: 63px; cursor: text; }
+.thought-card.is-editing .thought-footer { position: static; opacity: 1; pointer-events: auto; justify-content: flex-end; gap: 10px; background: none; padding-top: 12px; }
+@media (max-width: 360px) { .thought-card { padding: 14px 28px 14px 34px; } }
+@media (hover: none) { .thought-footer { opacity: 1; pointer-events: auto; } }
+
+/* Keep a single line clear; on longer cards the toolbar covers only the last line. */
+.thought-card { min-height: 68px; }
+.thought-card:not(.is-editing), .thought-card:not(.is-editing) .thought-content { cursor: copy; }
+.thought-card a, .thought-card button { cursor: pointer; }
+.thought-footer { left: 38px; right: 30px; bottom: 7px; padding: 0; height: 18px; justify-content: flex-start; background: #ffffffed; }
+.thought-actions { align-items: center; gap: 6px; }
+.thought-actions .quiet-button { min-height: 18px; height: 18px; padding: 0 6px; font-size: 10px; font-weight: 400; line-height: 16px; border: 1px solid #eeeeee; border-radius: 4px; background: #f7f7f7; }
+.thought-edit.quiet-button { position: absolute; top: 9px; right: 5px; width: 22px; height: 22px; padding: 4px; opacity: 0; }
+.thought-edit svg { display: block; width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 1.2; stroke-linecap: round; stroke-linejoin: round; }
+.thought-card:hover .thought-edit, .thought-card:focus-within .thought-edit { opacity: 1; }
+.thought-expand.quiet-button { bottom: 7px; height: 18px; line-height: 16px; padding-block: 0; }
+.thought-card.is-editing .thought-footer { height: auto; padding-top: 12px; }
+@media (max-width: 360px) { .thought-footer { left: 34px; } }
+
+/* Composer proportions and elevation matched to the installed Codex client. */
+.mgr-body { font-family: var(--font-sans); padding-bottom: 20px; }
+.thought-content, #think-input, .list-title { font-size: 15px; line-height: 22px; letter-spacing: normal; font-weight: 400; }
+.thought-content { max-height: 132px; }
+.thought-card.expanded .thought-content, .thought-card.is-editing .thought-content { max-height: none; }
+.think-composer { border: 0; border-radius: 24px; padding: 16px 12px 10px; background: #fff; box-shadow: 0 0 0 1px #0000000a, 0 2px 8px 0 #0000000a, 0 4px 40px 8px #00000006; }
+.think-composer:focus-within { border: 0; box-shadow: 0 0 0 1px #0000000a, 0 2px 8px 0 #0000000a, 0 4px 40px 8px #00000006; }
+#think-input { min-height: 44px; max-height: 187px; margin: 0 2px; }
+.composer-footer { padding-top: 12px; min-height: 44px; }
+.save-thought { display: grid; place-items: center; width: 32px; height: 32px; padding: 5px; border-radius: 50%; background: #161616; }
+.save-thought svg, #composer-attachments svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+#composer-attachments { display: grid; place-items: center; width: 32px; height: 32px; color: #292929; border: 0; border-radius: 50%; background: transparent; cursor: pointer; }
+#composer-attachments:hover { background: #f4f4f4; }
+.composer-attachment-shell { position: relative; }
+#composer-attachments-menu { position: absolute; bottom: 42px; left: 0; z-index: 10; width: 172px; padding: 5px; border: 1px solid #eee; border-radius: 12px; background: #fff; box-shadow: 0 4px 20px #00000012; }
+#composer-attachments-menu button { display: flex; justify-content: space-between; width: 100%; padding: 8px 10px; border: 0; border-radius: 7px; background: none; color: #161616; text-align: left; font-size: 13px; cursor: pointer; }
+#composer-attachments-menu button:hover, #composer-attachments-menu button:focus-visible { background: #f4f4f4; }
+#composer-attachments-menu span { color: #888; }
+
+/* Notes-like density: related content stays together rather than stretching apart. */
+.mgr-body { padding: 12px 16px 16px; }
+.mgr-toolbar { margin-bottom: 12px; }
+.home-tabs { margin-bottom: 12px; gap: 20px; }
+.home-tabs button { padding-bottom: 9px; }
+.think-list-tools { margin: -2px 0 7px; min-height: 16px; }
+.think-list { flex: 0 1 auto; gap: 8px; padding: 0 1px 2px; }
+.think-empty { flex: none; padding: 22px 0 26px; }
+.thought-card { min-height: 62px; padding: 12px 28px 12px 36px; border-radius: 10px; }
+.thought-check.quiet-button { top: 16px; }
+.thought-edit.quiet-button { top: 7px; }
+.thought-footer { left: 36px; bottom: 5px; }
+.think-composer { margin: 10px 1px 0; padding-top: 14px; }
+.session-row { padding: 10px 0; gap: 8px; }
+.session-row-identity { gap: 1px; }
+@media (max-width: 360px) { .mgr-body { padding-inline: 12px; } .thought-card { padding-left: 34px; } .thought-footer { left: 34px; } }
+
+/* Paper-like thoughts, with controls revealed only when a row is in use. */
+.home-tabs { border-bottom: 0; gap: 4px; margin-bottom: 8px; }
+.home-tabs button { padding: 6px 12px; border-radius: 7px; }
+.home-tabs button[aria-selected="true"] { background: #ededed; color: #161616; }
+.home-tabs button[aria-selected="true"]::after { display: none; }
+.think-list { flex: 1 1 0; min-height: 0; gap: 0; }
+.thought-card { min-height: 0; padding: 10px 14px 24px; border: 0; border-radius: 0; background: transparent; box-shadow: none; transition: box-shadow .16s ease, transform .16s ease; }
+.thought-card:hover, .thought-card:focus-within, .thought-card.is-editing { background: #fff; border-radius: 10px; box-shadow: 0 2px 4px #00000006, 0 7px 18px #00000012, 0 0 0 1px #00000004; transform: translateY(-1px); z-index: 1; }
+.thought-date { display: block; color: #929292; font-size: 11px; line-height: 14px; margin-bottom: 4px; }
+.thought-content { display: block; -webkit-line-clamp: unset; max-height: 132px; }
+.thought-card.is-truncated .thought-content { -webkit-mask-image: linear-gradient(#000 calc(100% - 22px), transparent); mask-image: linear-gradient(#000 calc(100% - 22px), transparent); }
+.thought-footer { left: 14px; right: 30px; background: transparent; }
+.thought-edit.quiet-button { top: 5px; right: 7px; }
+.think-composer { margin-top: 10px; }
+.composer-footer { justify-content: flex-start; }
+
+.thought-card { padding-top: 8px; }
+.thought-card.has-date { padding-top: 12px; }
+.thought-card:not(.has-date) .thought-content { padding-right: 28px; }
+
+/* White paper lifts gently; pinned thoughts keep a small persistent marker. */
+.think-list { padding: 6px 9px 12px; margin: -6px -8px 0; }
+.thought-pin.quiet-button { position: absolute; top: 5px; right: 31px; width: 22px; height: 22px; padding: 4px; opacity: 0; }
+.thought-pin svg { display: block; width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.2; stroke-linecap: round; stroke-linejoin: round; }
+.thought-card:hover .thought-pin, .thought-card:focus-within .thought-pin, .thought-card.is-pinned .thought-pin { opacity: 1; }
+.thought-pin[aria-pressed="true"] { color: #161616; }
+.thought-pin[aria-pressed="true"] svg path:first-child { fill: currentColor; }
+.thought-card:not(.has-date) .thought-content { padding-right: 68px; }
+@media (prefers-reduced-motion: reduce) { .thought-card { transition: none; } .thought-card:hover, .thought-card:focus-within { transform: none; } }
+
+.thought-delete.quiet-button { position: absolute; top: 5px; right: 55px; width: 22px; height: 22px; padding: 4px; opacity: 0; }
+.thought-delete svg { display: block; width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.2; stroke-linecap: round; stroke-linejoin: round; }
+.thought-card:hover .thought-delete, .thought-card:focus-within .thought-delete { opacity: 1; }
+.thought-date, .thought-content { margin-left: 0; }
+.thought-footer { left: 12px; }
+.mgr-status .quiet-button { margin-left: 10px; color: inherit; text-decoration: underline; }
+.mgr-status.visible .quiet-button { pointer-events: auto; }
+
+/* One reading grid across the logo, tabs, thoughts, and chats. */
+.session-row {
+  grid-template-columns: minmax(0, 1fr) 24px 24px;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  transition: box-shadow .16s ease, transform .16s ease;
+}
+.session-row:hover,
+.session-row:focus-within {
+  z-index: 1;
+  border-radius: 10px;
+  background: #fff;
+  transform: translateY(-1px);
+}
+.session-row.agent-codex:hover,
+.session-row.agent-codex:focus-within {
+  box-shadow: 0 2px 4px #7456b30a, 0 7px 20px #7456b329, 0 0 0 1px #7456b30d;
+}
+.session-row.agent-claude:hover,
+.session-row.agent-claude:focus-within {
+  box-shadow: 0 2px 4px #d977570a, 0 7px 20px #d9775733, 0 0 0 1px #d9775714;
+}
+.session-row-identity { justify-content: center; }
+.session-row { cursor: pointer; }
+.session-row button { cursor: pointer; }
+.list-title:hover { text-decoration: none; }
+.mgr-list { padding: 6px 9px 12px; margin: -6px -8px 0; }
+.thought-card { padding-left: 12px; }
+.thought-date,
+.thought-content { margin-left: 0; }
+.thought-footer { left: 12px; }
+@media (prefers-reduced-motion: reduce) {
+  .session-row { transition: none; }
+  .session-row:hover,
+  .session-row:focus-within { transform: none; }
+}

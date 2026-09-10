@@ -14,16 +14,7 @@ const els = {
   anthropicRuntimeSave: document.getElementById("anthropic-runtime-save"),
   runtimeSave: document.getElementById("runtime-save"),
   claudeDesktopAction: document.getElementById("claude-desktop-action"),
-  manualButton: document.getElementById("manual-btn"),
-  manualModal: document.getElementById("manual-modal"),
-  manualModalBackdrop: document.getElementById("manual-modal-backdrop"),
-  manualModalClose: document.getElementById("manual-modal-close"),
-  manualTitle: document.getElementById("manual-title"),
-  manualUrl: document.getElementById("manual-url"),
-  manualSave: document.getElementById("manual-save"),
 };
-
-const AGENT_LABELS = { codex: "Codex", claude: "Claude", manual: "Manual" };
 
 const ICONS = {
   edit: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M12.6 2.6a2 2 0 0 1 2.8 2.8L6 14.8l-4 .9.9-4L12.6 2.6zM10.8 4.4l2.8 2.8"></path></svg>',
@@ -38,7 +29,7 @@ let claudeDesktopAccess = { installed: false, authorized: false };
 let settingsRefreshInFlight = false;
 let renamingSessionId = null;
 
-const STATUS_VISIBLE_MILLIS = 3000;
+const STATUS_VISIBLE_MILLIS = 2000;
 let statusTimer = null;
 
 function setStatus(message) {
@@ -62,6 +53,7 @@ function renderList() {
   // here would remove the contenteditable title and discard the rename.
   if (renamingSessionId) return;
   els.list.innerHTML = "";
+
   if (!sessions.length) {
     const empty = document.createElement("li");
     empty.className = "list-empty";
@@ -70,15 +62,10 @@ function renderList() {
     return;
   }
 
-  sessions.forEach((session) => {
+  [...sessions].sort((a, b) => b.last_active - a.last_active).slice(0, 10).forEach((session) => {
     const item = document.createElement("li");
     item.className = "session-row";
-
-    // A manual chat has no history to follow, so it never lights up.
-    const dot = document.createElement("span");
-    dot.className = session.surface === "manual"
-      ? "session-dot manual"
-      : `session-dot ${session.running ? "running" : "idle"}`;
+    item.classList.add(`agent-${session.agent}`);
 
     const identity = document.createElement("div");
     identity.className = "session-row-identity";
@@ -86,34 +73,37 @@ function renderList() {
     const title = document.createElement("span");
     title.className = "list-title";
     title.textContent = session.title;
+    title.title = session.title;
     title.tabIndex = 0;
     title.setAttribute("role", "button");
-    title.addEventListener("click", () => {
-      if (!title.isContentEditable) focusSession(session.session_id);
-    });
     title.addEventListener("keydown", (event) => {
       if (!title.isContentEditable && (event.key === "Enter" || event.key === " ")) {
         event.preventDefault();
-        focusSession(session.session_id);
+        openListedSession(session);
       }
     });
 
-    const meta = document.createElement("span");
-    meta.className = "list-meta";
-    const agent = AGENT_LABELS[session.agent] || "Unknown";
-    meta.textContent = [session.project_name, agent].filter(Boolean).join(" | ");
-    identity.append(title, meta);
+    identity.append(title);
 
     const rename = iconButton("edit", `Rename ${session.title}`);
     rename.addEventListener("click", () => beginRename(title, session));
 
-    const launch = iconButton("open", `Open notes for ${session.title}`);
+    const launch = iconButton("open", `Open original chat for ${session.title}`);
     launch.classList.add("bare-arrow");
-    launch.addEventListener("click", () => launchSession(session.session_id));
+    launch.addEventListener("click", () => focusSession(session.session_id));
 
-    item.append(dot, identity, rename, launch);
+    item.append(identity, rename, launch);
+    item.addEventListener("click", (event) => {
+      if (!event.target.closest("button, [contenteditable='true']")) {
+        launchSession(session.session_id);
+      }
+    });
     els.list.appendChild(item);
   });
+}
+
+function openListedSession(session) {
+  launchSession(session.session_id);
 }
 
 function iconButton(icon, label) {
@@ -220,56 +210,6 @@ function setupPinButton() {
       if (current?.setAlwaysOnTop) await current.setAlwaysOnTop(pinned);
     } catch (error) {
       setStatus(`pin error: ${error}`);
-    }
-  });
-}
-
-function openManualModal() {
-  els.manualTitle.value = "";
-  els.manualUrl.value = "";
-  els.manualModal.classList.remove("hidden");
-  requestAnimationFrame(() => els.manualTitle.focus());
-}
-
-function closeManualModal() {
-  els.manualModal.classList.add("hidden");
-}
-
-async function saveManualSession() {
-  const title = els.manualTitle.value.trim();
-  const url = els.manualUrl.value.trim();
-  if (!title && !url) {
-    setStatus("add a title or a chat link");
-    els.manualTitle.focus();
-    return;
-  }
-  els.manualSave.disabled = true;
-  try {
-    const session = await window.__TAURI__.core.invoke("create_manual_session", {
-      title,
-      url: url || null,
-    });
-    closeManualModal();
-    await refreshSessions();
-    await launchSession(session.session_id);
-  } catch (error) {
-    setStatus(`add error: ${error}`);
-  } finally {
-    els.manualSave.disabled = false;
-  }
-}
-
-function setupManualChat() {
-  els.manualButton.addEventListener("click", openManualModal);
-  els.manualModalClose.addEventListener("click", closeManualModal);
-  els.manualModalBackdrop.addEventListener("click", closeManualModal);
-  els.manualSave.addEventListener("click", saveManualSession);
-  els.manualModal.addEventListener("keydown", (event) => {
-    if (event.key === "Enter" && event.target.tagName === "INPUT") {
-      event.preventDefault();
-      saveManualSession();
-    } else if (event.key === "Escape") {
-      closeManualModal();
     }
   });
 }
@@ -470,13 +410,11 @@ async function init() {
     return;
   }
   setupPinButton();
-  setupManualChat();
   await refreshSessions();
   await window.__TAURI__.event.listen("sessions-updated", (event) => {
     const payload = event.payload || {};
     if (Array.isArray(payload.sessions)) {
-      sessions = payload.sessions;
-      renderList();
+      refreshSessions();
     }
   });
   setInterval(refreshSessions, 10000);

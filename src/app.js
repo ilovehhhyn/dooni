@@ -376,6 +376,7 @@ async function initSession(invoke, listen) {
   document.getElementById("lock-btn").classList.toggle("manual", data.surface === "manual");
   renderAskedPrompts();
   renderPrompts();
+  await loadSavedThought(invoke);
   setupTabs();
   els.promptSearch.addEventListener("input", () => {
     const query = els.promptSearch.value;
@@ -640,3 +641,34 @@ init().catch((error) => {
   setStatus(`init error: ${error}`);
   showScreen(sessionId ? "memo" : "onboard");
 });
+
+async function loadSavedThought(invoke) {
+  const inbox = await invoke("get_think_data");
+  const thought = inbox.items.find(item => item.sessionId === sessionId);
+  if (!thought) return;
+  const capture = document.createElement("section");
+  capture.className = "saved-capture";
+  const body = document.createElement("div");
+  body.className = "saved-capture-body";
+  for (const block of thought.blocks) {
+    if (block.type === "image" && /^data:image\/(png|jpeg|webp|gif);base64,/.test(block.src)) {
+      const img = document.createElement("img"); img.src = block.src; img.alt = "Saved image"; body.append(img);
+    } else if (block.type === "link" && /^https?:\/\//.test(block.href)) {
+      const link = document.createElement("a"); link.href = block.href; link.textContent = block.text;
+      link.addEventListener("click", event => { event.preventDefault(); invoke("open_think_link", { url: block.href }).catch(error => setStatus(String(error))); }); body.append(link);
+    } else if (block.type === "text") body.append(document.createTextNode(block.text));
+  }
+  const button = document.createElement("button"); button.className = "capture-open";
+  button.textContent = `Copy & open ${thought.provider || "chat"} ↗`;
+  button.addEventListener("click", async () => {
+    button.disabled = true;
+    try {
+      const text = thought.blocks.map(b => b.type === "link" ? `${b.text} (${b.href})` : b.type === "text" ? b.text : "").join("");
+      await invoke("copy_think_content", { text, images: thought.blocks.filter(b => b.type === "image").map(b => b.src) });
+      const prefilled = await invoke("open_think_app", { provider: thought.provider === "ChatGPT" ? "Codex" : thought.provider || "Codex", prompt: thought.blocks.some(b => b.type === "image") ? null : text });
+      setStatus(prefilled ? "Opened in a new composer, ready to send." : "Opened the app. Press ⌘V to paste.");
+    } catch (error) { setStatus(String(error)); } finally { button.disabled = false; }
+  });
+  capture.append(body, button);
+  document.querySelector(".session-controls").before(capture);
+}
