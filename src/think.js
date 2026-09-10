@@ -4,7 +4,13 @@ let thinkData = { items: [], draft: null };
 let thinkReady = false;
 const expandedThoughts = new Set();
 let savingThought = false;
-let saveQueue = Promise.resolve();
+const thoughtSaves = createDraftSaver(
+  () => structuredClone(thinkData),
+  data => invokeThink('save_think_data', { data }),
+  error => setStatus(`Couldn't save draft: ${error}`),
+  () => structuredClone({ draft: thinkData.draft, editDrafts: thinkData.editDrafts || {} }),
+  data => invokeThink('save_think_drafts', { data }),
+);
 const invokeThink = (command, args) => window.__TAURI__.core.invoke(command, args);
 const webURL = value => { try { const url = new URL(value); return ['https:', 'http:'].includes(url.protocol) ? url.href : null; } catch { return null; } };
 function readBlocks(root) {
@@ -39,15 +45,18 @@ function renderBlocks(root, blocks) {
 }
 function thoughtText(blocks) { return blocks.map(b => b.type === 'link' ? `${b.text} (${b.href})` : b.type === 'text' ? b.text : '').join('').trim(); }
 function thoughtTitle(blocks) { return blocks.map(b => b.type === 'image' ? '' : b.text).join('').trim() || 'An image to think about'; }
-function persistThink() {
-  const data = JSON.parse(JSON.stringify(thinkData));
-  saveQueue = saveQueue.catch(() => {}).then(() => invokeThink('save_think_data', { data }));
-  return saveQueue;
+function persistThink() { return thoughtSaves.save(); }
+function flushThoughtDrafts() {
+  thoughtSaves.flush().catch(error => setStatus(`Couldn't save draft: ${error}`));
 }
+window.addEventListener('blur', flushThoughtDrafts);
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) flushThoughtDrafts();
+});
 function saveDraft() {
   if (!thinkReady || savingThought) return;
   thinkData.draft = { blocks: readBlocks(thinkInput) };
-  persistThink().catch(error => setStatus(`Couldn't save draft: ${error}`));
+  thoughtSaves.schedule();
 }
 function switchHome(tab) {
   for (const name of ['think', 'chats']) {
@@ -62,6 +71,17 @@ for (const name of ['think', 'chats']) {
   button.addEventListener('keydown', event => { if (['ArrowLeft', 'ArrowRight'].includes(event.key)) { event.preventDefault(); const other = name === 'think' ? 'chats' : 'think'; switchHome(other); document.getElementById(`tab-${other}`).focus(); } });
 }
 function action(label, callback) { const button = document.createElement('button'); button.type = 'button'; button.className = 'quiet-button'; button.textContent = label; button.addEventListener('click', callback); return button; }
+function updateThoughtDisclosure(card) {
+  const body = card.querySelector('.thought-content');
+  const expanded = card.classList.contains('expanded');
+  const editing = card.classList.contains('is-editing');
+  const truncated = body.clientHeight >= 131 && body.scrollHeight > body.clientHeight + 2;
+  card.querySelector('.thought-expand').hidden = editing || (!expanded && !truncated);
+  card.classList.toggle('is-truncated', !editing && !expanded && truncated);
+}
+function updateThoughtDisclosures() {
+  document.querySelectorAll('.thought-card').forEach(updateThoughtDisclosure);
+}
 function renderThoughts() {
   const list = document.getElementById('think-list'); list.replaceChildren();
   const items = thinkData.items.filter(item => !item.deletedAt)
@@ -123,13 +143,12 @@ function renderThoughts() {
     });
     expand.classList.add('thought-expand'); expand.setAttribute('aria-expanded', String(expanded));
     expand.setAttribute('aria-label', expanded ? 'Collapse thought' : 'Expand thought');
-    const updateDisclosure = () => { const truncated = body.clientHeight >= 131 && body.scrollHeight > body.clientHeight + 2; expand.hidden = editing || (!expanded && !truncated); card.classList.toggle("is-truncated", !editing && !expanded && truncated); };
-    body.querySelectorAll('img').forEach(img => img.addEventListener('load', updateDisclosure));
+    body.querySelectorAll('img').forEach(img => img.addEventListener('load', () => updateThoughtDisclosure(card)));
     if (editing) {
       body.contentEditable = 'true'; body.setAttribute('role', 'textbox'); body.setAttribute('aria-label', 'Edit thought'); body.setAttribute('aria-multiline', 'true');
       const saveEditDraft = () => {
         thinkData.editDrafts[item.id] = readBlocks(body);
-        persistThink().catch(error => setStatus(`Couldn't save edit: ${error}`));
+        thoughtSaves.schedule();
       };
       body.addEventListener('input', saveEditDraft);
       body.addEventListener('paste', event => pasteIntoEditor(event, body, saveEditDraft));
@@ -188,9 +207,8 @@ function renderThoughts() {
       shownDates.add(dateKey); card.append(date); card.classList.add('has-date');
     }
     card.append(remove, pin, body, footer, expand); list.append(card);
-    updateDisclosure();
-    requestAnimationFrame(updateDisclosure);
   }
+  requestAnimationFrame(updateThoughtDisclosures);
 }
 async function startThought(item, provider, button) {
   const buttons = button.closest('.thought-actions').querySelectorAll('button'); buttons.forEach(b => b.disabled = true);
@@ -280,14 +298,15 @@ async function initThink() {
     await persistThink();
   }
   if (thinkData.draft) renderBlocks(thinkInput, thinkData.draft.blocks);
+  await window.__TAURI__.window.getCurrentWindow().onCloseRequested(async event => {
+    event.preventDefault();
+    try { await thoughtSaves.flush(); await window.__TAURI__.window.getCurrentWindow().destroy(); }
+    catch (error) { setStatus(`Couldn't save before closing: ${error}`); }
+  });
   thinkReady = true; thinkInput.contentEditable = 'true';
   renderThoughts(); renderList();
 }
-window.addEventListener('resize', () => {
-  document.querySelectorAll('.thought-card:not(.expanded):not(.is-editing)').forEach(card => {
-    const body = card.querySelector('.thought-content'); const truncated = body.clientHeight >= 131 && body.scrollHeight > body.clientHeight + 2; card.querySelector('.thought-expand').hidden = !truncated; card.classList.toggle('is-truncated', truncated);
-  });
-});
+window.addEventListener('resize', updateThoughtDisclosures);
 initThink().catch(error => setStatus(`Couldn't load thoughts: ${error}`));
 
 const attachmentsButton = document.getElementById('composer-attachments');

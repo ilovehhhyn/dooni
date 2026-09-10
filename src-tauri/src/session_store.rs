@@ -292,6 +292,27 @@ mod tests {
     }
 
     #[test]
+    fn draft_saves_preserve_inbox_and_full_save_clears_overlay() {
+        let directory = test_directory("draft-overlay");
+        let database = directory.join("sessions.sqlite3");
+        let inbox = serde_json::json!({"items": [{"id": "image", "blocks": [{"type": "image", "src": "saved-image"}]}], "draft": null});
+        save_think_data_at(&database, &inbox).unwrap();
+        let drafts = serde_json::json!({"draft": {"blocks": [{"type": "text", "text": "new draft"}]}, "editDrafts": {"image": [{"type": "text", "text": "editing"}]}});
+        save_think_drafts_at(&database, &drafts).unwrap();
+        let restored = load_think_data_at(&database).unwrap();
+        assert_eq!(restored["items"], inbox["items"]);
+        assert_eq!(restored["draft"], drafts["draft"]);
+        assert_eq!(restored["editDrafts"], drafts["editDrafts"]);
+        let connection = open_database(&database).unwrap();
+        let stored: String = connection.query_row("SELECT value FROM metadata WHERE key = 'think_inbox'", [], |row| row.get(0)).unwrap();
+        assert_eq!(serde_json::from_str::<serde_json::Value>(&stored).unwrap(), inbox);
+        save_think_data_at(&database, &inbox).unwrap();
+        assert_eq!(load_think_data_at(&database).unwrap(), inbox);
+        drop(connection);
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
     fn rich_inbox_and_draft_survive_chat_retention() {
         let directory = test_directory("think-retention");
         let database = directory.join("sessions.sqlite3");
@@ -446,10 +467,19 @@ fn load_think_data_at(path: &std::path::Path) -> Result<serde_json::Value> {
             |row| row.get(0),
         )
         .optional()?;
-    Ok(match data {
+    let mut data: serde_json::Value = match data {
         Some(data) => serde_json::from_str(&data)?,
         None => serde_json::json!({"items": [], "draft": null}),
-    })
+    };
+    let drafts: Option<String> = connection.query_row(
+        "SELECT value FROM metadata WHERE key = 'think_drafts'", [], |row| row.get(0),
+    ).optional()?;
+    if let Some(drafts) = drafts {
+        let drafts: serde_json::Value = serde_json::from_str(&drafts)?;
+        data["draft"] = drafts["draft"].clone();
+        data["editDrafts"] = drafts["editDrafts"].clone();
+    }
+    Ok(data)
 }
 
 pub fn save_think_data(data: &serde_json::Value) -> Result<()> {
@@ -458,7 +488,22 @@ pub fn save_think_data(data: &serde_json::Value) -> Result<()> {
 }
 
 fn save_think_data_at(path: &std::path::Path, data: &serde_json::Value) -> Result<()> {
+    let mut connection = open_database(path)?;
+    let transaction = connection.transaction()?;
+    transaction.execute("INSERT INTO metadata(key, value) VALUES ('think_inbox', ?1) ON CONFLICT(key) DO UPDATE SET value = excluded.value", [serde_json::to_string(data)?])?;
+    transaction.execute("DELETE FROM metadata WHERE key = 'think_drafts'", [])?;
+    transaction.commit()?;
+    Ok(())
+}
+
+pub fn save_think_drafts(data: &serde_json::Value) -> Result<()> {
+    let path = database_path().ok_or_else(|| anyhow::anyhow!("Data directory unavailable"))?;
+    save_think_drafts_at(&path, data)
+}
+
+fn save_think_drafts_at(path: &std::path::Path, data: &serde_json::Value) -> Result<()> {
     let connection = open_database(path)?;
-    connection.execute("INSERT INTO metadata(key, value) VALUES ('think_inbox', ?1) ON CONFLICT(key) DO UPDATE SET value = excluded.value", [serde_json::to_string(data)?])?;
+    let drafts = serde_json::json!({"draft": data["draft"], "editDrafts": data["editDrafts"]});
+    connection.execute("INSERT INTO metadata(key, value) VALUES ('think_drafts', ?1) ON CONFLICT(key) DO UPDATE SET value = excluded.value", [serde_json::to_string(&drafts)?])?;
     Ok(())
 }

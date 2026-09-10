@@ -176,8 +176,21 @@ fn get_think_data() -> Result<serde_json::Value, String> {
 }
 
 #[tauri::command]
-fn save_think_data(data: serde_json::Value) -> Result<(), String> {
-    session_store::save_think_data(&data).map_err(|e| e.to_string())
+async fn save_think_data(data: serde_json::Value) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        session_store::save_think_data(&data).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn save_think_drafts(data: serde_json::Value) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        session_store::save_think_drafts(&data).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -644,6 +657,7 @@ fn main() {
             open_claude_desktop_access,
             get_think_data,
             save_think_data,
+            save_think_drafts,
             open_think_link,
             open_think_app,
             copy_think_content,
