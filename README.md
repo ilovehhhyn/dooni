@@ -5,7 +5,7 @@ covers:
 ---
 # dooni
 
-a small desktop memo app (installable for mac) with a **to-think list** for saving ideas, questions, and future prompts you cannot yet queue or ask. dooni also automatically tracks your codex and claude coding chats across terminal and app, keeping your past prompts in asked and giving each session space for thoughts, with keyboard shortcuts.
+a small desktop memo app (installable for mac) with a **to-think list** for saving ideas, questions, and future prompts you cannot yet queue or ask. Native to Codex and Claude — everything made simple so you don’t lose your flow. dooni also automatically tracks your Codex and Claude coding chats across terminal and app, keeping your past prompts in asked and giving each session space for thoughts, with keyboard shortcuts.
 
 dooni is your pensive so you never lose a thread: save now, ask later!
 
