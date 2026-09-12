@@ -5,9 +5,13 @@ covers:
 ---
 # dooni
 
-a small desktop memo app (installable for mac) for automatically tracking your codex and claude coding chats, keeping a running list of your prompts & space for jotting down thoughts of each session across terminal and app with keyboard shortcuts.
+a small desktop memo app (installable for mac) with a **to-think list** for saving ideas, questions, and future prompts you cannot yet queue or ask. dooni also automatically tracks your codex and claude coding chats across terminal and app, keeping your past prompts in asked and giving each session space for thoughts, with keyboard shortcuts.
 
-dooni is your pensive so you never lose a thread!
+dooni is your pensive so you never lose a thread: save now, ask later!
+
+## Your to-think list
+
+Each chat memo has a thoughts tab that acts as its to-think list. Type ideas, questions, or future prompts, then click to copy, edit, delete, or check them off. dooni does not automatically queue or execute them.
 
 ## 60-second demo
 
@@ -54,7 +58,7 @@ Codex runtime authentication is the default, so you do not need an API key to st
 - you can retitle the chat by clicking the pencil icon
 - you can go to the chat specific memo pad by clicking on the title
 - on each memo page, there are two tabs: thoughts and asked.
-  - thoughts is future prompts, which is where you can keep track of all the prompts you can't yet queue or thoughts you can't yet ask in a side chat. after you enter these prompts for safekeeping, click to copy, or click on the circle to check it off, or delete, or edit.
+  - thoughts is the to-think list for ideas, questions, and future prompts you cannot yet queue or ask. save them now to ask later. click a thought to copy it, click the circle to check it off, or edit or delete it. thoughts are not automatically queued or executed.
   - asked contains your historical prompts. click on any of them to be directed to the original chat interface and where the prompt appriximately was.
 - the list retains at most the 20 newest admitted chats; older entries and their windows are removed.
 - the windows are not pinned by default but you can click the top left circle to pin.
